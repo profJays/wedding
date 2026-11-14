@@ -34,7 +34,7 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
 
   const fireCelebrationConfetti = () => {
     // Wedding color palette: Emerald Green, Olive Green, and Gold!
-    const colors = ['#0F5132', '#14532D', '#556B2F', '#D4AF37', '#E5C365', '#FAF8F5', '#F3E5AB'];
+    const colors = ['#0F5132', '#14532D', '#556B2F', '#D4AF37', '#E5C365', '#FAF7F0', '#F3E5AB'];
 
     try {
       // First burst
@@ -78,14 +78,13 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
   });
 
   const primaryPersona = tags[1] || tags[0] || 'Celebrated Guest';
-  const secondaryPersona = tags[3] || tags[4] || 'Vibe Specialist';
 
   const handleShare = async () => {
-    const shareText = `I just took The Damilola & Joseph Wedding Challenge and got officially approved as a "${primaryPersona}"! Check if you're wedding-ready: ${window.location.href}`;
+    const shareText = `I just took The Joseph & Damilola Wedding Challenge (#MJ2026) and got officially approved as a "${primaryPersona}"! Check if you're wedding-ready: ${window.location.href}`;
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'The Damilola & Joseph Wedding Challenge',
+          title: 'The Joseph & Damilola Wedding Challenge',
           text: shareText,
           url: window.location.href
         });
@@ -102,12 +101,13 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
   return (
     <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-8 animate-pop">
       {/* Celebratory Banner Card */}
-      <div className="stationery-card rounded-2xl p-5 sm:p-9 text-center relative overflow-hidden border border-[#D4AF37]/40 shadow-xl">
+      <div className="stationery-card rounded-2xl p-5 sm:p-9 text-center relative overflow-hidden border border-[#D4AF37]/45 shadow-xl">
         {/* Floating Confetti trigger button */}
         <button
           onClick={fireCelebrationConfetti}
           className="absolute top-3.5 right-3.5 p-2 rounded-full text-[#D4AF37] hover:bg-[#0F5132]/10 active:scale-95 transition-all cursor-pointer"
           title="More celebratory confetti!"
+          aria-label="Trigger celebratory confetti"
         >
           <Sparkles className="w-5 h-5 text-[#D4AF37] animate-pulse" />
         </button>
@@ -122,34 +122,35 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
           </div>
         </div>
 
-        {/* Mandatory exact phrasing: "YOU HAVE OFFICIALLY BEEN APPROVED!" */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F5132]/10 text-[#0F5132] text-[11px] sm:text-xs font-bold tracking-widest uppercase mb-2 sm:mb-3">
+        {/* Clean Unboxed Status Kicker */}
+        <div className="inline-flex items-center gap-1.5 text-[#556B2F] text-[11px] sm:text-xs font-bold tracking-widest uppercase mb-2">
           <Award className="w-3.5 h-3.5 text-[#D4AF37]" />
-          <span>Etiquette Test: 100% Passed</span>
+          <span>#MJ2026 Etiquette Test · 100% Passed</span>
         </div>
 
+        {/* Exact required headline */}
         <h1 className="font-serif text-2xl sm:text-4xl font-black tracking-tight text-[#0F5132] uppercase leading-tight mb-2">
           YOU HAVE OFFICIALLY BEEN APPROVED!
         </h1>
 
-        {/* Mandatory exact phrasing: "Joseph & Damilola can't wait to celebrate with you!" */}
+        {/* Exact required phrasing */}
         <p className="font-serif italic text-base sm:text-xl text-[#18261D] mb-5">
-          “Damilola &amp; Joseph can't wait to celebrate with you!”
+          “Joseph &amp; Damilola can't wait to celebrate with you!”
         </p>
 
-        {/* VIP PASS TICKET KEEPSAKE (Emerald & Gold) */}
-        <div className="mb-6 sm:mb-7 text-left rounded-xl border-2 border-dashed border-[#D4AF37]/50 bg-gradient-to-b from-[#FAF8F5] to-white p-4 sm:p-5 relative shadow-inner">
+        {/* VIP PASS TICKET KEEPSAKE (Emerald, Olive & Gold) */}
+        <div className="mb-6 sm:mb-7 text-left rounded-xl border-2 border-dashed border-[#D4AF37]/55 bg-gradient-to-b from-[#FAF7F0] to-white p-4 sm:p-5 relative shadow-inner">
           <div className="flex items-start justify-between gap-3 border-b border-[#0F5132]/15 pb-3 mb-3">
             <div>
               <p className="font-mono text-[10px] tracking-widest uppercase text-[#556B2F] font-bold">
-                OFFICIAL WEDDING GUEST PASS
+                OFFICIAL WEDDING GUEST PASS · #MJ2026
               </p>
               <h2 className="font-serif text-xl sm:text-2xl font-bold text-[#0F5132] tracking-wide">
                 {displayName}
               </h2>
             </div>
             <div className="text-right">
-              <div className="inline-block px-2.5 py-1 rounded bg-[#0F5132] text-white font-mono text-[10px] tracking-wider uppercase font-semibold border border-[#D4AF37]">
+              <div className="inline-block px-2.5 py-1 rounded bg-[#0F5132] text-[#F3E5AB] font-mono text-[10px] tracking-wider uppercase font-semibold border border-[#D4AF37]">
                 CLEARED VIP
               </div>
             </div>
@@ -183,7 +184,7 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
             </div>
             <div>
               <span className="text-[#18261D]/60 block text-[10px] uppercase tracking-wider font-semibold">
-                Official Registry
+                Official Website
               </span>
               <span className="font-medium text-[#0F5132]">
                 withjoy.com
@@ -192,30 +193,31 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
           </div>
 
           <div className="pt-2.5 border-t border-[#0F5132]/10 flex items-center justify-between text-[10px] sm:text-[11px] text-[#18261D]/70 font-mono">
-            <span>PASS #DJ-2026-CONFIRMED</span>
+            <span>PASS #MJ2026-CONFIRMED</span>
             <span className="flex items-center gap-1 text-[#0F5132]">
-              <Heart className="w-3 h-3 fill-[#D4AF37] text-[#D4AF37]" /> D &amp; J
+              <Heart className="w-3 h-3 fill-[#D4AF37] text-[#D4AF37]" /> J &amp; D
             </span>
           </div>
         </div>
 
-        {/* TWO PRIMARY BUTTONS AS EXPLICITLY REQUESTED */}
+        {/* PRIMARY & SECONDARY ACTIONS */}
         <div className="space-y-2.5 sm:space-y-3">
-          {/* Button 1: VISIT OUR WEDDING WEBSITE (opens https://withjoy.com/joseph-and-damilola) */}
+          {/* Prominent Button: EXPLORE OUR WEDDING */}
           <a
             href="https://withjoy.com/joseph-and-damilola"
             target="_blank"
             rel="noopener noreferrer"
-            className="group w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 sm:py-4 text-xs sm:text-sm font-bold tracking-wider uppercase text-white bg-[#0F5132] hover:bg-[#0B4627] active:scale-[0.99] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F5132] cursor-pointer border border-[#D4AF37]/50"
+            className="group relative w-full inline-flex items-center justify-center gap-2 px-5 py-4 min-h-[52px] text-xs sm:text-sm font-bold tracking-[0.18em] uppercase text-white bg-[#0F5132] hover:bg-[#0B4627] active:scale-[0.99] transition-all rounded-xl shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] cursor-pointer border-2 border-[#D4AF37]/75 overflow-hidden"
           >
-            <span>VISIT OUR WEDDING WEBSITE</span>
+            <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-[#F3E5AB]/20 to-transparent skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
+            <span>EXPLORE OUR WEDDING</span>
             <ExternalLink className="w-4 h-4 text-[#F3E5AB] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
           </a>
 
-          {/* Button 2: PLAY AGAIN */}
+          {/* Secondary Button: PLAY AGAIN */}
           <button
             onClick={onPlayAgain}
-            className="group w-full inline-flex items-center justify-center gap-2 px-5 py-3 text-xs sm:text-sm font-semibold tracking-wider uppercase text-[#0F5132] bg-white hover:bg-[#FAF8F5] border border-[#0F5132]/25 active:scale-[0.99] transition-all rounded-xl cursor-pointer"
+            className="group w-full inline-flex items-center justify-center gap-2 px-5 py-3 min-h-[44px] text-xs sm:text-sm font-semibold tracking-wider uppercase text-[#0F5132] bg-white hover:bg-[#FAF7F0] border border-[#0F5132]/25 active:scale-[0.99] transition-all rounded-xl cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5 group-hover:-rotate-90 transition-transform" />
             <span>PLAY AGAIN</span>

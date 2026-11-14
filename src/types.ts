@@ -13,7 +13,7 @@ export interface Question {
   options: AnswerOption[];
 }
 
-export type QuizStep = 'welcome' | 'quiz' | 'uninvited' | 'approved';
+export type QuizStep = 'invitation' | 'welcome' | 'quiz' | 'uninvited' | 'approved';
 
 export interface QuizState {
   currentQuestionIndex: number;

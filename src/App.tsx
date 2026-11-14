@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Header } from './components/Header';
+import { InvitationScreen } from './components/InvitationScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { QuizScreen } from './components/QuizScreen';
 import { UninvitedScreen } from './components/UninvitedScreen';
@@ -10,7 +11,7 @@ import { WEDDING_QUESTIONS } from './data/questions';
 import { QuizStep, AnswerOption } from './types';
 
 export default function App() {
-  const [step, setStep] = useState<QuizStep>('welcome');
+  const [step, setStep] = useState<QuizStep>('invitation');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [guestName, setGuestName] = useState<string>('');
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -19,7 +20,12 @@ export default function App() {
   const currentQuestion = WEDDING_QUESTIONS[currentQuestionIndex];
   const selectedOptionId = currentQuestion ? answers[currentQuestion.id] : undefined;
 
-  // Handlers
+  // Stage 2 -> Stage 3 transition
+  const handleContinueFromInvitation = () => {
+    setStep('welcome');
+  };
+
+  // Challenge handlers
   const handleStart = () => {
     setCurrentQuestionIndex(0);
     setStep('quiz');
@@ -77,19 +83,29 @@ export default function App() {
     setStep('welcome');
   };
 
-  const handleGoHome = () => {
+  const handleGoInvitation = () => {
+    setStep('invitation');
+  };
+
+  const handleGoChallenge = () => {
     setStep('welcome');
   };
 
+  // Stage 1 & Stage 2: Full-screen luxury digital invitation envelope
+  if (step === 'invitation') {
+    return <InvitationScreen onContinue={handleContinueFromInvitation} />;
+  }
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF8F5] text-[#18261D] selection:bg-[#0F5132]/20 selection:text-[#0F5132]">
+    <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#18261D] selection:bg-[#0F5132]/20 selection:text-[#0F5132]">
       {/* Top Bar navigation */}
       <Header
-        onGoHome={handleGoHome}
+        onGoInvitation={handleGoInvitation}
+        onGoChallenge={handleGoChallenge}
         onOpenFaq={() => setIsFaqOpen(true)}
       />
 
-      {/* Main Dynamic Viewport */}
+      {/* Main Dynamic Viewport (Stage 3 & Final Stage) */}
       <main className="flex-1 flex items-center justify-center py-6 sm:py-10">
         {step === 'welcome' && (
           <WelcomeScreen

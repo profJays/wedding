@@ -60,11 +60,11 @@ export const Crest: React.FC<CrestProps> = ({ className = '', size = 'md' }) => 
         />
       </svg>
 
-      {/* Monogram inside: D & J */}
+      {/* Monogram inside: J & D */}
       <div className="absolute inset-0 flex items-center justify-center font-serif text-[#0F5132]">
-        <span className="text-sm font-semibold tracking-tighter">D</span>
-        <span className="font-script text-xs mx-0.5 text-[#D4AF37] font-normal">&amp;</span>
         <span className="text-sm font-semibold tracking-tighter">J</span>
+        <span className="font-script text-xs mx-0.5 text-[#D4AF37] font-normal">&amp;</span>
+        <span className="text-sm font-semibold tracking-tighter">D</span>
       </div>
     </div>
   );

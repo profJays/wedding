@@ -82,7 +82,7 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
               </button>
             ) : (
               <span className="text-[#556B2F] text-[11px] font-medium tracking-wide">
-                Damilola &amp; Joseph Challenge
+                Joseph &amp; Damilola Challenge
               </span>
             )}
           </div>
@@ -103,11 +103,11 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
       </div>
 
       {/* Main Question Card */}
-      <div className="stationery-card rounded-2xl p-4 sm:p-7 border border-[#D4AF37]/35 relative shadow-md">
+      <div className="stationery-card rounded-2xl p-4 sm:p-7 border border-[#D4AF37]/40 relative shadow-md">
         {/* Subtle top header strip */}
         <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#0F5132]/10 text-xs text-[#0F5132]/75">
           <span className="font-serif italic tracking-wide text-xs sm:text-sm">
-            Damilola &amp; Joseph · Wedding Readiness
+            Joseph &amp; Damilola · Wedding Readiness
           </span>
           <span className="font-mono text-[10px] uppercase tracking-widest text-[#D4AF37] font-bold">
             Step {currentIndex + 1}

@@ -16,65 +16,61 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   return (
     <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-8 animate-pop">
       {/* Stationery Outer Card */}
-      <div className="stationery-card rounded-2xl p-5 sm:p-9 text-center relative overflow-hidden border border-[#D4AF37]/30">
+      <div className="stationery-card rounded-2xl p-5 sm:p-9 text-center relative overflow-hidden border border-[#D4AF37]/40">
         {/* Subtle decorative gold corner flourishes */}
-        <div className="absolute top-3 left-3 w-5 h-5 border-t-2 border-l-2 border-[#D4AF37]/60 rounded-tl-xs pointer-events-none" />
-        <div className="absolute top-3 right-3 w-5 h-5 border-t-2 border-r-2 border-[#D4AF37]/60 rounded-tr-xs pointer-events-none" />
-        <div className="absolute bottom-3 left-3 w-5 h-5 border-b-2 border-l-2 border-[#D4AF37]/60 rounded-bl-xs pointer-events-none" />
-        <div className="absolute bottom-3 right-3 w-5 h-5 border-b-2 border-r-2 border-[#D4AF37]/60 rounded-br-xs pointer-events-none" />
+        <div className="absolute top-3 left-3 w-5 h-5 border-t-2 border-l-2 border-[#D4AF37]/75 rounded-tl-xs pointer-events-none" />
+        <div className="absolute top-3 right-3 w-5 h-5 border-t-2 border-r-2 border-[#D4AF37]/75 rounded-tr-xs pointer-events-none" />
+        <div className="absolute bottom-3 left-3 w-5 h-5 border-b-2 border-l-2 border-[#D4AF37]/75 rounded-bl-xs pointer-events-none" />
+        <div className="absolute bottom-3 right-3 w-5 h-5 border-b-2 border-r-2 border-[#D4AF37]/75 rounded-br-xs pointer-events-none" />
 
         {/* Inner bordered enclosure */}
-        <div className="p-4 sm:p-6 rounded-xl border border-[#0F5132]/15 bg-gradient-to-b from-white via-[#FAF8F5]/60 to-white">
+        <div className="p-4 sm:p-6 rounded-xl border border-[#0F5132]/15 bg-gradient-to-b from-[#FFFDF8] via-[#FAF7F0]/70 to-[#FFFDF8]">
           {/* Monogram Crest */}
           <div className="mb-3 sm:mb-4 flex justify-center">
             <Crest size="lg" className="animate-float" />
           </div>
 
-          {/* Invitation Kicker */}
-          <p className="font-serif italic text-sm sm:text-base text-[#556B2F] tracking-wide mb-1">
-            You're invited. But first...
+          {/* Kicker */}
+          <p className="font-mono text-[11px] font-semibold tracking-[0.24em] uppercase text-[#556B2F] mb-1">
+            #MJ2026 · Wedding Guest Check-In
           </p>
 
-          {/* Couple Names: Damilola & Joseph */}
-          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-[0.12em] text-[#0F5132] uppercase mb-2">
-            Damilola &amp; Joseph
+          {/* Couple Names */}
+          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-[0.1em] text-[#0F5132] uppercase mb-2">
+            Joseph &amp; Damilola
           </h1>
 
           {/* Subtitle / Challenge Hook */}
           <div className="inline-flex items-center justify-center gap-2 mb-4">
-            <span className="h-[1px] w-6 sm:w-10 bg-[#D4AF37]/50" />
+            <span className="h-[1px] w-6 sm:w-10 bg-[#D4AF37]/60" />
             <p className="font-sans text-xs sm:text-sm font-semibold text-[#556B2F] tracking-wider uppercase">
               Let's see if you're wedding-ready!
             </p>
-            <span className="h-[1px] w-6 sm:w-10 bg-[#D4AF37]/50" />
+            <span className="h-[1px] w-6 sm:w-10 bg-[#D4AF37]/60" />
           </div>
 
-          {/* Colors of the Day Banner */}
-          <div className="mb-5 inline-flex flex-wrap items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-[#FAF8F5] border border-[#D4AF37]/40 shadow-2xs">
-            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-[#18261D]/70">
-              Colors of the Day:
+          {/* Unboxed Colors of the Day Metadata */}
+          <div className="mb-5 flex flex-wrap items-center justify-center gap-2 text-[11px] sm:text-xs text-[#18261D]/75">
+            <span className="uppercase tracking-wider font-semibold text-[#556B2F]">Palette:</span>
+            <span className="inline-flex items-center gap-1 text-[#0F5132] font-semibold">
+              <span className="w-2 h-2 rounded-full bg-[#0F5132] inline-block" />
+              Emerald
             </span>
-            <div className="flex items-center gap-1.5 text-[11px] font-medium">
-              <span className="inline-flex items-center gap-1 text-[#0F5132] font-semibold">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#0F5132] inline-block shadow-xs" />
-                Emerald
-              </span>
-              <span className="text-[#D4AF37]">·</span>
-              <span className="inline-flex items-center gap-1 text-[#556B2F] font-semibold">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#556B2F] inline-block shadow-xs" />
-                Olive
-              </span>
-              <span className="text-[#D4AF37]">·</span>
-              <span className="inline-flex items-center gap-1 text-[#B38F37] font-semibold">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#D4AF37] inline-block shadow-xs" />
-                Gold
-              </span>
-            </div>
+            <span className="text-[#D4AF37]" aria-hidden="true">·</span>
+            <span className="inline-flex items-center gap-1 text-[#556B2F] font-semibold">
+              <span className="w-2 h-2 rounded-full bg-[#556B2F] inline-block" />
+              Olive
+            </span>
+            <span className="text-[#D4AF37]" aria-hidden="true">·</span>
+            <span className="inline-flex items-center gap-1 text-[#A47E22] font-semibold">
+              <span className="w-2 h-2 rounded-full bg-[#D4AF37] inline-block" />
+              Gold
+            </span>
           </div>
 
           <p className="text-xs sm:text-sm text-[#18261D]/75 leading-relaxed max-w-sm mx-auto mb-5 sm:mb-6">
-            Before we assign your seat and pour the chilled palm wine &amp; champagne,
-            prove you understand the etiquette, enthusiasm, and cardinal rules of Damilola &amp; Joseph's celebration!
+            Before we unlock our wedding celebration details and reserve your seat,
+            prove your wedding etiquette, enthusiasm, and dress code readiness!
           </p>
 
           {/* Personalized Guest Name Input */}
@@ -94,7 +90,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               maxLength={40}
               className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[#0F5132]/25 bg-white text-[#18261D] placeholder-[#18261D]/35 focus:outline-none focus:border-[#0F5132] focus:ring-2 focus:ring-[#0F5132]/15 transition-all shadow-2xs"
             />
-            <p className="text-[10px] text-[#18261D]/50 mt-1 italic text-center">
+            <p className="text-[10px] text-[#18261D]/55 mt-1 italic text-center">
               Leave blank to proceed as "Honored Guest"
             </p>
           </div>
@@ -103,7 +99,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <div className="relative flex justify-center mb-5">
             <button
               onClick={onStart}
-              className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 text-sm sm:text-base font-semibold tracking-wider uppercase text-white bg-[#0F5132] hover:bg-[#0B4627] active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F5132] focus-visible:ring-offset-2 overflow-hidden cursor-pointer border border-[#D4AF37]/40"
+              className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 min-h-[48px] text-sm sm:text-base font-semibold tracking-wider uppercase text-white bg-[#0F5132] hover:bg-[#0B4627] active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] focus-visible:ring-offset-2 overflow-hidden cursor-pointer border border-[#D4AF37]/60"
             >
               {/* Subtle gold shimmer sweep */}
               <span className="absolute inset-0 w-1/2 h-full bg-white/15 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
@@ -127,25 +123,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             </span>
             <span className="text-[#D4AF37]">·</span>
             <span className="inline-flex items-center gap-1">
-              <HeartHandshake className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <HeartHandshake className="w-3.5 h-3.5 text-[#B38F37]" />
               Verified Guest Pass
             </span>
           </div>
-        </div>
-
-        {/* Link back to withjoy.com */}
-        <div className="mt-3.5 pt-2 text-center">
-          <p className="text-[11px] text-[#18261D]/60">
-            Official Wedding Registry &amp; Details on{' '}
-            <a
-              href="https://withjoy.com/joseph-and-damilola"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#0F5132] font-semibold underline underline-offset-2 hover:text-[#0B4627]"
-            >
-              withjoy.com/joseph-and-damilola
-            </a>
-          </p>
         </div>
       </div>
     </div>

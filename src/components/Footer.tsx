@@ -6,7 +6,7 @@ export const Footer: React.FC = () => {
     <footer className="w-full border-t border-[#0F5132]/10 py-6 sm:py-8 px-4 text-center text-xs text-[#18261D]/60 mt-auto">
       <div className="max-w-4xl mx-auto flex flex-col items-center gap-2.5">
         <p className="font-serif italic text-sm text-[#0F5132]">
-          Celebrating the Wedding of Damilola &amp; Joseph
+          Celebrating the Wedding of Joseph &amp; Damilola
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs">
