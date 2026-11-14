@@ -1,0 +1,8 @@
+{
+  "name": "The Joseph & Damilola Wedding Challenge",
+  "description": "An interactive, elegant wedding invitation and guest quiz experience celebrating Joseph & Damilola.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
