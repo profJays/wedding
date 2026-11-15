@@ -49,6 +49,7 @@ import {
   verifyDriveConnectionWithServer,
   initDriveFoldersWithServer,
   testDriveConnectionWithServer,
+  testServerRefreshTokenWithServer,
   disconnectDriveWithServer,
   listAllGalleryItemsAdmin,
   uploadGalleryMediaFiles,
@@ -66,6 +67,8 @@ import {
   AdminUser,
   GalleryServerStatus,
   DriveConnectionStatus,
+  DriveAuthState,
+  DriveAuthStateLabel,
   DriveMediaCategory,
   CoupleQAItem,
   WeddingScheduleEvent,
@@ -91,6 +94,69 @@ interface AdminDashboardProps {
 }
 
 type AdminTab = 'overview' | 'content' | 'rsvps' | 'gallery' | 'settings';
+
+function resolveDisplayedDriveAuth(
+  driveStatus: DriveConnectionStatus | null,
+  hasBrowserDriveToken: boolean
+): {
+  state: DriveAuthState;
+  label: DriveAuthStateLabel;
+  badgeClass: string;
+} {
+  if (!driveStatus) {
+    return {
+      state: 'not_connected',
+      label: 'Not Connected',
+      badgeClass: 'bg-stone-200 text-[#262820]'
+    };
+  }
+
+  if (!driveStatus.configuredFolderId) {
+    return {
+      state: 'missing_server_credentials',
+      label: 'Missing Server Credentials',
+      badgeClass: 'bg-red-100 text-red-900'
+    };
+  }
+
+  if (driveStatus.authState === 'connected_server_refresh') {
+    return {
+      state: 'connected_server_refresh',
+      label: 'Connected — Server Refresh Token',
+      badgeClass: 'bg-[#07543E] text-white'
+    };
+  }
+
+  if (hasBrowserDriveToken) {
+    return {
+      state: 'connected_browser_session',
+      label: 'Connected — Browser Session Only',
+      badgeClass: 'bg-[#737746] text-white'
+    };
+  }
+
+  if (driveStatus.authState === 'reconnection_required') {
+    return {
+      state: 'reconnection_required',
+      label: 'Reconnection Required',
+      badgeClass: 'bg-red-100 text-red-900'
+    };
+  }
+
+  if (driveStatus.authState === 'missing_server_credentials') {
+    return {
+      state: 'missing_server_credentials',
+      label: 'Missing Server Credentials',
+      badgeClass: 'bg-amber-100 text-amber-950'
+    };
+  }
+
+  return {
+    state: 'not_connected',
+    label: 'Not Connected',
+    badgeClass: 'bg-stone-200 text-[#262820]'
+  };
+}
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   siteContent,
@@ -209,6 +275,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   }, [isAuthorizedAdmin]);
 
+  const refreshDriveAndServerStatus = async () => {
+    try {
+      const [statusResult, driveResult] = await Promise.allSettled([
+        fetchGalleryServerStatus(),
+        fetchDriveConnectionStatusAdmin()
+      ]);
+      if (statusResult.status === 'fulfilled') {
+        setServerStatus(statusResult.value);
+      }
+      if (driveResult.status === 'fulfilled') {
+        setDriveStatus(driveResult.value);
+      }
+    } finally {
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+    }
+  };
+
   const handleConnectGoogleDrive = async () => {
     setDriveActionBusy(true);
     setBannerMessage(null);
@@ -218,9 +301,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const nextStatus = await verifyDriveConnectionWithServer(accessToken);
       setDriveStatus(nextStatus);
       setAdminNeedsDriveReconnect(false);
+      await refreshDriveAndServerStatus();
+      const modeNote = nextStatus.unattendedUploadsReady
+        ? 'Persistent server refresh-token authentication is also active for unattended guest uploads.'
+        : 'Browser session connected. Note: unattended public guest uploads still require all server OAuth credentials configured.';
       setBannerMessage({
         type: 'success',
-        text: `Google Drive connected as ${nextStatus.connectedEmail || email} (Folder: "${nextStatus.folderName}").`
+        text: `Google Drive authorized as ${nextStatus.connectedEmail || email} (Folder: "${nextStatus.folderName}"). ${modeNote}`
       });
     } catch (err) {
       setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
@@ -238,19 +325,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setBannerMessage(null);
     try {
       let token = getDriveAccessToken();
-      if (!token) {
+      if (!driveStatus?.serverRefreshConfigured && !token) {
         const connected = await connectGoogleDrive();
         token = connected.accessToken;
         setHasBrowserDriveToken(true);
       }
-      const nextStatus = await initDriveFoldersWithServer(token);
+      const nextStatus = await initDriveFoldersWithServer(token || undefined);
       setDriveStatus(nextStatus);
+      await refreshDriveAndServerStatus();
       setBannerMessage({
         type: 'success',
         text: 'Wedding Google Drive folder structure ("Mary and Joseph Wedding") verified and initialized.'
       });
     } catch (err) {
-      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      await refreshDriveAndServerStatus();
       setBannerMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Failed to initialize Drive folders.'
@@ -265,22 +353,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setBannerMessage(null);
     try {
       let token = getDriveAccessToken();
-      if (!token) {
+      if (!driveStatus?.serverRefreshConfigured && !token) {
         const connected = await connectGoogleDrive();
         token = connected.accessToken;
         setHasBrowserDriveToken(true);
       }
-      const res = await testDriveConnectionWithServer(token);
+      const res = await testDriveConnectionWithServer(token || undefined);
       setDriveStatus(res.driveStatus);
+      await refreshDriveAndServerStatus();
       setBannerMessage({
         type: 'success',
-        text: `Drive connection verified! Upload target "${res.driveStatus.folderName}" is ready.`
+        text: res.message
       });
     } catch (err) {
-      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      await refreshDriveAndServerStatus();
       setBannerMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Google Drive connection test failed.'
+      });
+    } finally {
+      setDriveActionBusy(false);
+    }
+  };
+
+  const handleTestServerRefreshToken = async () => {
+    setDriveActionBusy(true);
+    setBannerMessage(null);
+    try {
+      const res = await testServerRefreshTokenWithServer();
+      setDriveStatus(res.driveStatus);
+      await refreshDriveAndServerStatus();
+      setBannerMessage({
+        type: 'success',
+        text: res.message
+      });
+    } catch (err) {
+      await refreshDriveAndServerStatus();
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Server refresh token test failed.'
       });
     } finally {
       setDriveActionBusy(false);
@@ -295,9 +406,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setHasBrowserDriveToken(false);
       const nextStatus = await disconnectDriveWithServer();
       setDriveStatus(nextStatus);
+      await refreshDriveAndServerStatus();
       setBannerMessage({
         type: 'success',
-        text: 'Google Drive session disconnected.'
+        text: 'Browser Google Drive session disconnected.'
       });
     } catch (err) {
       setBannerMessage({
@@ -395,6 +507,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const adminFailedEntries = useMemo(
     () => adminValidationReport.entries.filter((entry) => entry.uploadStatus === 'failed'),
     [adminValidationReport.entries]
+  );
+
+  const displayedDriveAuth = useMemo(
+    () => resolveDisplayedDriveAuth(driveStatus, hasBrowserDriveToken),
+    [driveStatus, hasBrowserDriveToken]
   );
 
   // -------------------------------------------------------------------------
@@ -849,50 +966,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <span
-                className={`self-start px-3 py-1.5 rounded-md text-xs font-semibold ${
-                  !driveStatus?.configuredFolderId
-                    ? 'bg-red-100 text-red-900'
-                    : driveStatus.lastError &&
-                      (driveStatus.lastError.toLowerCase().includes('revoked') ||
-                        driveStatus.lastError.toLowerCase().includes('expired'))
-                    ? 'bg-red-100 text-red-900'
-                    : hasBrowserDriveToken && driveStatus.oauthConnected
-                    ? 'bg-[#07543E] text-white'
-                    : driveStatus.serverRefreshConfigured
-                    ? 'bg-[#07543E] text-white'
-                    : 'bg-amber-100 text-amber-900'
-                }`}
-              >
-                {!driveStatus?.configuredFolderId
-                  ? 'Missing GOOGLE_DRIVE_FOLDER_ID'
-                  : driveStatus.lastError &&
-                    (driveStatus.lastError.toLowerCase().includes('revoked') ||
-                      driveStatus.lastError.toLowerCase().includes('expired'))
-                  ? 'Reconnect Required'
-                  : hasBrowserDriveToken && driveStatus.oauthConnected
-                  ? 'Connected (Active OAuth Session)'
-                  : driveStatus.serverRefreshConfigured
-                  ? 'Connected (Server Refresh Token)'
-                  : driveStatus.oauthConnected
-                  ? 'Session Expired — Reconnect'
-                  : 'Not Connected'}
+              <span className={`self-start px-3 py-1.5 rounded-md text-xs font-semibold ${displayedDriveAuth.badgeClass}`}>
+                {displayedDriveAuth.label}
               </span>
             </div>
 
-            {!driveStatus?.configuredFolderId && (
-              <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 leading-relaxed">
-                <strong>Missing Configuration:</strong> <code className="font-mono">GOOGLE_DRIVE_FOLDER_ID</code> is not set in the server environment secrets. Configure the target Google Drive folder ID owned by <code className="font-mono">joepreserve@gmail.com</code> in Secrets and restart the server.
+            {driveStatus && driveStatus.missingServerEnvVars.length > 0 && (
+              <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs sm:text-sm text-amber-950 space-y-2 leading-relaxed">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5">
+                    <p className="font-semibold">
+                      Persistent Server Credentials Missing — Unattended Guest Uploads Disabled
+                    </p>
+                    <p>
+                      Unattended public guest uploads require configuring these server environment variables:{' '}
+                      <code className="font-mono font-semibold">
+                        {driveStatus.missingServerEnvVars.join(', ')}
+                      </code>
+                      .
+                    </p>
+                    {driveStatus.configuredFolderId && (
+                      <p>
+                        {displayedDriveAuth.state === 'connected_browser_session'
+                          ? 'Your current browser OAuth session lets you upload as an administrator right now, but public guests cannot upload without an admin session until the server refresh-token variables above are set.'
+                          : 'Until those server secrets are configured, clicking "Connect Google Drive" only authorizes temporary administrator uploads in this browser session.'}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
-            {(driveStatus?.lastError || adminNeedsDriveReconnect) && (
-              <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs sm:text-sm text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {(displayedDriveAuth.state === 'reconnection_required' ||
+              (driveStatus?.serverRefreshConfigured && driveStatus.serverRefreshVerified === false) ||
+              driveStatus?.lastError ||
+              adminNeedsDriveReconnect) && (
+              <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-2.5 leading-relaxed">
-                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
                   <span>
                     {driveStatus?.lastError ||
-                      'Your Google Drive OAuth session needs to be reconnected before uploading files.'}
+                      'Google Drive reconnection is required. Update the server refresh token for unattended guest uploads or click "Reconnect Google Drive" for administrator uploads.'}
                   </span>
                 </div>
                 <button
@@ -910,10 +1025,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm">
               <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
                 <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
-                  Connected Account
+                  Authentication Mode
                 </p>
-                <p className="font-semibold text-[#07543E] mt-1 break-all">
-                  {driveStatus?.connectedEmail || 'Not authorized in this browser'}
+                <p className="font-semibold text-[#07543E] mt-1 break-words">
+                  {driveStatus?.unattendedUploadsReady
+                    ? 'Server Refresh Token (Unattended)'
+                    : hasBrowserDriveToken
+                    ? 'Browser Session Only (Temporary)'
+                    : 'Not Authorized'}
+                </p>
+                <p className="text-xs text-[#262820]/65 mt-0.5 break-all">
+                  {driveStatus?.connectedEmail || 'joepreserve@gmail.com'}
                 </p>
               </div>
 
@@ -966,10 +1088,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Link2 className="w-3.5 h-3.5 text-[#C5A04A]" />
                 <span>
-                  {hasBrowserDriveToken && driveStatus?.oauthConnected
+                  {hasBrowserDriveToken || displayedDriveAuth.state === 'reconnection_required'
                     ? 'Reconnect Google Drive'
                     : 'Connect Google Drive'}
                 </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleTestServerRefreshToken()}
+                disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#C5A04A]" />
+                <span>Test Server Refresh Token</span>
               </button>
 
               <button
@@ -992,7 +1124,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span>Test Connection</span>
               </button>
 
-              {(hasBrowserDriveToken || driveStatus?.oauthConnected) && (
+              {hasBrowserDriveToken && (
                 <button
                   type="button"
                   onClick={() => void handleDisconnectGoogleDrive()}
@@ -1000,7 +1132,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-red-200 bg-white hover:bg-red-50 disabled:opacity-50 text-red-700 text-xs font-semibold uppercase tracking-wider cursor-pointer"
                 >
                   <Unlink className="w-3.5 h-3.5" />
-                  <span>Disconnect Google Drive</span>
+                  <span>Disconnect Browser Session</span>
                 </button>
               )}
             </div>
@@ -1881,22 +2013,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Admin uploads bypass the December 12 guest lock, save into the selected Google Drive subfolder, and publish immediately as approved.
                   </p>
                 </div>
-                {(!hasBrowserDriveToken && !driveStatus?.serverRefreshConfigured) ||
-                adminNeedsDriveReconnect ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleConnectGoogleDrive()}
-                    disabled={driveActionBusy}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg bg-[#C5A04A]/25 border border-[#C5A04A] text-[#07543E] text-xs font-semibold cursor-pointer"
-                  >
-                    <Link2 className="w-3.5 h-3.5" />
-                    <span>
-                      {adminNeedsDriveReconnect
-                        ? 'Reconnect Google Drive'
-                        : 'Connect Google Drive First'}
-                    </span>
-                  </button>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded text-xs font-semibold ${displayedDriveAuth.badgeClass}`}>
+                    {displayedDriveAuth.label}
+                  </span>
+                  {(!driveStatus?.unattendedUploadsReady && !hasBrowserDriveToken) ||
+                  adminNeedsDriveReconnect ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleConnectGoogleDrive()}
+                      disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg bg-[#C5A04A]/25 border border-[#C5A04A] text-[#07543E] text-xs font-semibold cursor-pointer"
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      <span>
+                        {adminNeedsDriveReconnect
+                          ? 'Reconnect Google Drive'
+                          : 'Connect Google Drive'}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               {/* Upload Guidelines */}

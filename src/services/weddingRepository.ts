@@ -28,6 +28,7 @@ import {
   AdminUser,
   GalleryServerStatus,
   DriveConnectionStatus,
+  DriveTestConnectionResponse,
   DriveMediaCategory,
   UploadBatchResponse,
   UploadFileResult
@@ -403,7 +404,7 @@ export async function uploadGalleryMediaFiles(params: {
 
   const idToken =
     params.isAdmin && auth.currentUser ? await auth.currentUser.getIdToken() : null;
-  const driveToken = getDriveAccessToken();
+  const driveToken = params.isAdmin ? getDriveAccessToken() : null;
 
   // Use XMLHttpRequest so callers receive real upload progress events
   const serverResponse = await new Promise<UploadBatchResponse>((resolve) => {
@@ -429,17 +430,22 @@ export async function uploadGalleryMediaFiles(params: {
       }
 
       if (
+        params.isAdmin &&
         xhr.status === 401 &&
-        (body.code === 'DRIVE_AUTH_EXPIRED' || body.code === 'DRIVE_REFRESH_EXPIRED')
+        body.code === 'DRIVE_AUTH_EXPIRED'
       ) {
         clearExpiredDriveToken();
       }
 
       const fallbackMsg =
         xhr.status === 401
-          ? 'Your Google Drive connection has expired. Reconnect Google Drive and retry your upload.'
+          ? params.isAdmin
+            ? 'Google Drive authorization is missing or expired. Connect Google Drive or verify your server refresh token and retry.'
+            : 'Photo and video uploads are temporarily unavailable while the couple finishes connecting the wedding gallery storage. Please try again shortly.'
           : xhr.status === 403
-          ? "You don't have permission to upload files to this Google Drive folder. Check the connected Drive account or folder permissions."
+          ? params.isAdmin
+            ? "You don't have permission to upload files to this Google Drive folder. Check the connected Drive account or folder permissions."
+            : 'Gallery uploads are not open yet or storage is temporarily restricted. Please check the countdown or try again later.'
           : xhr.status >= 500
           ? 'Something went wrong on our end while uploading your files. Please try again in a moment.'
           : `Upload could not be completed (${xhr.status}). Please check your selected files and try again.`;
@@ -469,11 +475,12 @@ export async function uploadGalleryMediaFiles(params: {
         error: xhr.status >= 200 && xhr.status < 300 ? body.error : body.error || fallbackMsg,
         code: body.code,
         needsDriveReconnect: Boolean(
-          body.needsDriveReconnect ||
-            xhr.status === 401 ||
-            body.code === 'DRIVE_AUTH_MISSING' ||
-            body.code === 'DRIVE_AUTH_EXPIRED' ||
-            body.code === 'DRIVE_REFRESH_EXPIRED'
+          params.isAdmin &&
+            (body.needsDriveReconnect ||
+              xhr.status === 401 ||
+              body.code === 'DRIVE_AUTH_MISSING' ||
+              body.code === 'DRIVE_AUTH_EXPIRED' ||
+              body.code === 'DRIVE_REFRESH_EXPIRED')
         ),
         serverTimeMs: body.serverTimeMs,
         isAdminUpload: body.isAdminUpload
@@ -679,7 +686,8 @@ async function adminDriveFetch<T>(
 }
 
 export function fetchDriveConnectionStatusAdmin(): Promise<DriveConnectionStatus> {
-  return adminDriveFetch<DriveConnectionStatus>('/api/drive/status', 'GET');
+  const token = getDriveAccessToken() || undefined;
+  return adminDriveFetch<DriveConnectionStatus>('/api/drive/status', 'GET', token);
 }
 
 export function verifyDriveConnectionWithServer(
@@ -689,19 +697,23 @@ export function verifyDriveConnectionWithServer(
 }
 
 export function initDriveFoldersWithServer(
-  driveAccessToken: string
+  driveAccessToken?: string
 ): Promise<DriveConnectionStatus> {
   return adminDriveFetch<DriveConnectionStatus>('/api/drive/folders/init', 'POST', driveAccessToken);
 }
 
 export function testDriveConnectionWithServer(
-  driveAccessToken: string
-): Promise<{ ok: boolean; driveStatus: DriveConnectionStatus }> {
-  return adminDriveFetch<{ ok: boolean; driveStatus: DriveConnectionStatus }>(
+  driveAccessToken?: string
+): Promise<DriveTestConnectionResponse> {
+  return adminDriveFetch<DriveTestConnectionResponse>(
     '/api/drive/test',
     'POST',
     driveAccessToken
   );
+}
+
+export function testServerRefreshTokenWithServer(): Promise<DriveTestConnectionResponse> {
+  return adminDriveFetch<DriveTestConnectionResponse>('/api/drive/test-refresh', 'POST');
 }
 
 export function disconnectDriveWithServer(): Promise<DriveConnectionStatus> {

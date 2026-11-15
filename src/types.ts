@@ -136,6 +136,20 @@ export interface DriveSubfolderMap {
   adminMediaId?: string;
 }
 
+export type DriveAuthState =
+  | 'connected_server_refresh'
+  | 'connected_browser_session'
+  | 'not_connected'
+  | 'reconnection_required'
+  | 'missing_server_credentials';
+
+export type DriveAuthStateLabel =
+  | 'Connected — Server Refresh Token'
+  | 'Connected — Browser Session Only'
+  | 'Not Connected'
+  | 'Reconnection Required'
+  | 'Missing Server Credentials';
+
 export interface DriveConnectionStatus {
   configuredFolderId: boolean;
   folderIdPreview: string;
@@ -143,10 +157,26 @@ export interface DriveConnectionStatus {
   oauthConnected: boolean;
   connectedEmail: string;
   serverRefreshConfigured: boolean;
+  serverRefreshVerified: boolean | null;
+  unattendedUploadsReady: boolean;
+  authState: DriveAuthState;
+  authStateLabel: DriveAuthStateLabel;
+  missingServerEnvVars: string[];
   lastUploadAt: string | null;
   subfoldersInitialized: boolean;
   subfolders: DriveSubfolderMap;
   lastError: string | null;
+}
+
+export interface DriveTestConnectionResponse {
+  ok: boolean;
+  refreshTokenConfigured: boolean;
+  refreshTokenValid: boolean;
+  tokenObtained: boolean;
+  folderVerified: boolean;
+  authMode: 'server_refresh_token' | 'browser_session' | 'none';
+  message: string;
+  driveStatus: DriveConnectionStatus;
 }
 
 export interface GalleryServerStatus {
@@ -159,6 +189,7 @@ export interface GalleryServerStatus {
   timezone: string;
   storageProvider: 'google_drive' | 'local_server';
   googleDriveConfigured: boolean;
+  unattendedUploadsReady: boolean;
   driveStatus: DriveConnectionStatus;
   limits: {
     maxImageBytes: number;

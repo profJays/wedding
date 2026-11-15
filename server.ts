@@ -7,8 +7,11 @@ import { createServer as createViteServer } from 'vite';
 import {
   DriveStorageError,
   getDriveConnectionStatus,
+  resolveAccessToken,
   verifyAndSaveDriveConnection,
   ensureDriveFolderStructure,
+  testDriveConnection,
+  testServerRefreshTokenConnection,
   disconnectDriveState,
   storeGalleryFileInDrive,
   resolveLocalMediaPath,
@@ -216,9 +219,9 @@ async function startServer() {
       serverTimeMs: Date.now(),
       timezone: 'Africa/Lagos',
       storageProvider: 'google_drive',
-      googleDriveConfigured:
-        driveStatus.configuredFolderId &&
-        (driveStatus.oauthConnected || driveStatus.serverRefreshConfigured)
+      googleDriveConfigured: driveStatus.unattendedUploadsReady,
+      unattendedUploadsReady: driveStatus.unattendedUploadsReady,
+      driveAuthState: driveStatus.authStateLabel
     });
   });
 
@@ -245,9 +248,8 @@ async function startServer() {
       unlockAtLagosFormatted: formatLagosTime(unlockEpochMs),
       timezone: 'Africa/Lagos',
       storageProvider: 'google_drive',
-      googleDriveConfigured:
-        driveStatus.configuredFolderId &&
-        (driveStatus.oauthConnected || driveStatus.serverRefreshConfigured),
+      googleDriveConfigured: driveStatus.unattendedUploadsReady,
+      unattendedUploadsReady: driveStatus.unattendedUploadsReady,
       driveStatus,
       limits: {
         maxImageBytes: MAX_IMAGE_BYTES,
@@ -261,10 +263,11 @@ async function startServer() {
   app.get('/api/drive/status', async (req, res) => {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
-    res.json(getDriveConnectionStatus());
+    const hasBrowserSession = Boolean(req.header('X-Google-Drive-Token')?.trim());
+    res.json(getDriveConnectionStatus({ hasBrowserSession }));
   });
 
-  // Admin: Verify OAuth Access Token + Target GOOGLE_DRIVE_FOLDER_ID
+  // Admin: Verify Browser OAuth Access Token + Target GOOGLE_DRIVE_FOLDER_ID
   app.post('/api/drive/verify', async (req, res) => {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
@@ -279,7 +282,9 @@ async function startServer() {
     }
 
     try {
-      const status = await verifyAndSaveDriveConnection(driveToken.trim());
+      const status = await verifyAndSaveDriveConnection(driveToken.trim(), {
+        fromBrowserSession: true
+      });
       res.json(status);
     } catch (err) {
       if (err instanceof DriveStorageError) {
@@ -295,18 +300,21 @@ async function startServer() {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
 
-    const driveToken = req.header('X-Google-Drive-Token') || '';
-    if (!driveToken.trim()) {
-      res.status(401).json({
-        error: 'Google Drive OAuth token required to initialize folders. Click "Connect Google Drive" first.',
-        code: 'DRIVE_AUTH_MISSING'
-      });
-      return;
-    }
-
+    const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
     try {
-      await ensureDriveFolderStructure(driveToken.trim());
-      res.json(getDriveConnectionStatus());
+      const { accessToken, source } = await resolveAccessToken({
+        driveAccessTokenHeader: driveTokenHeader,
+        allowBrowserFallback: true,
+        audience: 'admin'
+      });
+      await ensureDriveFolderStructure(accessToken, {
+        fromBrowserSession: source === 'header'
+      });
+      res.json(
+        getDriveConnectionStatus({
+          hasBrowserSession: Boolean(driveTokenHeader.trim())
+        })
+      );
     } catch (err) {
       if (err instanceof DriveStorageError) {
         res.status(err.statusCode).json({ error: err.message, code: err.code });
@@ -316,29 +324,53 @@ async function startServer() {
     }
   });
 
-  // Admin: Test Drive Connection + Permissions
+  // Admin: Test Drive Connection + Permissions (prefers server refresh token when configured)
   app.post('/api/drive/test', async (req, res) => {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
 
-    const driveToken = req.header('X-Google-Drive-Token') || '';
-    if (!driveToken.trim()) {
-      res.status(401).json({
-        error: 'Your browser Google Drive session is not active. Click "Reconnect Google Drive" to test.',
-        code: 'DRIVE_AUTH_MISSING'
-      });
-      return;
-    }
-
     try {
-      const status = await verifyAndSaveDriveConnection(driveToken.trim());
-      res.json({ ok: true, driveStatus: status });
+      const result = await testDriveConnection(req.header('X-Google-Drive-Token') || undefined);
+      if (!result.ok) {
+        res.status(result.refreshTokenConfigured ? 401 : 400).json({
+          ...result,
+          error: result.message,
+          code: result.refreshTokenConfigured ? 'DRIVE_REFRESH_EXPIRED' : 'DRIVE_AUTH_MISSING'
+        });
+        return;
+      }
+      res.json(result);
     } catch (err) {
       if (err instanceof DriveStorageError) {
         res.status(err.statusCode).json({ error: err.message, code: err.code });
         return;
       }
       res.status(500).json({ error: 'Drive connection test failed. Please retry.' });
+    }
+  });
+
+  // Admin: Test Server-Side Refresh Token Exchange Directly (no token exposed in response)
+  app.post('/api/drive/test-refresh', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+
+    try {
+      const result = await testServerRefreshTokenConnection();
+      if (!result.ok) {
+        res.status(result.refreshTokenConfigured ? 401 : 400).json({
+          ...result,
+          error: result.message,
+          code: result.refreshTokenConfigured ? 'DRIVE_REFRESH_EXPIRED' : 'DRIVE_AUTH_MISSING'
+        });
+        return;
+      }
+      res.json(result);
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(500).json({ error: 'Server refresh token test failed. Please retry.' });
     }
   });
 
@@ -550,7 +582,8 @@ async function startServer() {
               mimeType: entry.canonicalMime,
               category,
               mediaType: entry.mediaType,
-              driveAccessTokenHeader: driveTokenHeader
+              driveAccessTokenHeader: isAdminUpload ? driveTokenHeader : undefined,
+              isAdminUpload
             });
 
             const itemMeta: UploadedFileMetadata = {
@@ -607,7 +640,8 @@ async function startServer() {
 
         const failedCount = files.length - uploaded.length;
         const needsDriveReconnect = Boolean(
-          blockingDriveError &&
+          isAdminUpload &&
+            blockingDriveError &&
             (blockingDriveError.code === 'DRIVE_AUTH_MISSING' ||
               blockingDriveError.code === 'DRIVE_AUTH_EXPIRED' ||
               blockingDriveError.code === 'DRIVE_REFRESH_EXPIRED')

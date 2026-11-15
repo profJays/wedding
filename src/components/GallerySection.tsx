@@ -416,6 +416,18 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
               <Upload className="w-5 h-5 text-[#C5A04A] shrink-0" />
             </div>
 
+            {serverStatus && !serverStatus.unattendedUploadsReady && (
+              <div
+                role="status"
+                className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs sm:text-sm text-amber-950 flex items-start gap-2.5 leading-relaxed"
+              >
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>
+                  Photo and video uploads are temporarily awaiting final storage setup by the couple. Please check back shortly or reach out to Mary &amp; Joseph if you need assistance.
+                </span>
+              </div>
+            )}
+
             {/* Clear Upload Guidelines Before Submission */}
             <div className="p-4 rounded-xl bg-[#F2EBDD]/80 border border-[#C5A04A]/35 text-xs sm:text-sm text-[#262820]/85 space-y-1.5 leading-relaxed">
               <p className="font-semibold text-[#07543E] flex items-center gap-1.5">

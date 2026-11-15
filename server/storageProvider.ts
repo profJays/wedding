@@ -1,7 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { DriveConnectionStatus, DriveMediaCategory, DriveSubfolderMap } from '../src/types.ts';
+import type {
+  DriveAuthState,
+  DriveAuthStateLabel,
+  DriveConnectionStatus,
+  DriveMediaCategory,
+  DriveSubfolderMap,
+  DriveTestConnectionResponse
+} from '../src/types.ts';
 
 export interface StoredMediaResult {
   storageProvider: 'google_drive' | 'local_server';
@@ -47,12 +54,36 @@ interface PersistedDriveState {
   subfolders: DriveSubfolderMap;
 }
 
+interface RefreshExchangeResult {
+  token: string | null;
+  errorReason: string | null;
+  errorCode?: 'DRIVE_REFRESH_EXPIRED' | 'DRIVE_API_ERROR';
+}
+
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const UPLOAD_ROOT = path.resolve(DATA_DIR, 'gallery-uploads');
 const DRIVE_STATE_PATH = path.resolve(DATA_DIR, 'drive-state.json');
 
-// Optional in-memory cache ONLY for env-var refresh token exchange (never persisted to disk)
+// Strict in-memory only caches/flags for server OAuth tokens (never written to disk or responses)
 let cachedServerRefreshToken: { accessToken: string; expiresAtMs: number } | null = null;
+let inFlightRefreshPromise: Promise<RefreshExchangeResult> | null = null;
+let serverRefreshVerified: boolean | null = null;
+let manuallyDisconnected = false;
+
+export function resetServerRefreshAuthCacheForTests(options?: {
+  expiresAtMs?: number;
+  accessToken?: string;
+  verified?: boolean | null;
+  disconnected?: boolean;
+}): void {
+  cachedServerRefreshToken =
+    options?.accessToken && options?.expiresAtMs !== undefined
+      ? { accessToken: options.accessToken, expiresAtMs: options.expiresAtMs }
+      : null;
+  inFlightRefreshPromise = null;
+  serverRefreshVerified = options?.verified !== undefined ? options.verified : null;
+  manuallyDisconnected = options?.disconnected ?? false;
+}
 
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
@@ -110,6 +141,16 @@ function updateDriveState(patch: Partial<PersistedDriveState>): PersistedDriveSt
   return updated;
 }
 
+export function getMissingServerEnvVars(): string[] {
+  const requiredVars = [
+    'GOOGLE_DRIVE_FOLDER_ID',
+    'GOOGLE_OAUTH_CLIENT_ID',
+    'GOOGLE_OAUTH_CLIENT_SECRET',
+    'GOOGLE_OAUTH_REFRESH_TOKEN'
+  ];
+  return requiredVars.filter((key) => !(process.env[key] || '').trim());
+}
+
 export function hasServerRefreshCredentials(): boolean {
   return Boolean(
     process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() &&
@@ -118,7 +159,71 @@ export function hasServerRefreshCredentials(): boolean {
   );
 }
 
-export function getDriveConnectionStatus(): DriveConnectionStatus {
+function mapDriveAuthState(params: {
+  configuredFolderId: boolean;
+  serverRefreshConfigured: boolean;
+  hasBrowserSession: boolean;
+  lastError: string | null;
+}): { authState: DriveAuthState; authStateLabel: DriveAuthStateLabel } {
+  const { configuredFolderId, serverRefreshConfigured, hasBrowserSession, lastError } = params;
+
+  if (!configuredFolderId) {
+    return {
+      authState: 'missing_server_credentials',
+      authStateLabel: 'Missing Server Credentials'
+    };
+  }
+
+  if (serverRefreshConfigured) {
+    if (serverRefreshVerified === false) {
+      if (hasBrowserSession) {
+        return {
+          authState: 'connected_browser_session',
+          authStateLabel: 'Connected — Browser Session Only'
+        };
+      }
+      return {
+        authState: 'reconnection_required',
+        authStateLabel: 'Reconnection Required'
+      };
+    }
+
+    return {
+      authState: 'connected_server_refresh',
+      authStateLabel: 'Connected — Server Refresh Token'
+    };
+  }
+
+  if (hasBrowserSession) {
+    return {
+      authState: 'connected_browser_session',
+      authStateLabel: 'Connected — Browser Session Only'
+    };
+  }
+
+  if (lastError && /browser.*(expired|revoked)/i.test(lastError)) {
+    return {
+      authState: 'reconnection_required',
+      authStateLabel: 'Reconnection Required'
+    };
+  }
+
+  if (manuallyDisconnected) {
+    return {
+      authState: 'not_connected',
+      authStateLabel: 'Not Connected'
+    };
+  }
+
+  return {
+    authState: 'missing_server_credentials',
+    authStateLabel: 'Missing Server Credentials'
+  };
+}
+
+export function getDriveConnectionStatus(options?: {
+  hasBrowserSession?: boolean;
+}): DriveConnectionStatus {
   const folderId = (process.env.GOOGLE_DRIVE_FOLDER_ID || '').trim();
   const state = readDriveState();
   const folderPreview = folderId
@@ -138,13 +243,39 @@ export function getDriveConnectionStatus(): DriveConnectionStatus {
       s.adminMediaId
   );
 
+  const configuredFolderId = Boolean(folderId);
+  const serverRefreshConfigured = hasServerRefreshCredentials();
+  const missingServerEnvVars = getMissingServerEnvVars();
+  const hasBrowserSession = Boolean(options?.hasBrowserSession);
+
+  const { authState, authStateLabel } = mapDriveAuthState({
+    configuredFolderId,
+    serverRefreshConfigured,
+    hasBrowserSession,
+    lastError: state.lastError
+  });
+
+  const unattendedUploadsReady = Boolean(
+    configuredFolderId && serverRefreshConfigured && serverRefreshVerified !== false
+  );
+
+  // Never falsely report Drive as persistently connected via historical browser state alone
+  const effectiveConnected = Boolean(
+    unattendedUploadsReady || hasBrowserSession
+  );
+
   return {
-    configuredFolderId: Boolean(folderId),
+    configuredFolderId,
     folderIdPreview: folderPreview,
     folderName: state.folderName || '',
-    oauthConnected: state.oauthConnected,
+    oauthConnected: effectiveConnected,
     connectedEmail: state.connectedEmail || '',
-    serverRefreshConfigured: hasServerRefreshCredentials(),
+    serverRefreshConfigured,
+    serverRefreshVerified: serverRefreshConfigured ? serverRefreshVerified : null,
+    unattendedUploadsReady,
+    authState,
+    authStateLabel,
+    missingServerEnvVars,
     lastUploadAt: state.lastUploadAt,
     subfoldersInitialized,
     subfolders: state.subfolders,
@@ -152,23 +283,7 @@ export function getDriveConnectionStatus(): DriveConnectionStatus {
   };
 }
 
-async function exchangeServerRefreshToken(forceRefresh = false): Promise<{
-  token: string | null;
-  errorReason: string | null;
-  errorCode?: 'DRIVE_REFRESH_EXPIRED' | 'DRIVE_API_ERROR';
-}> {
-  if (!hasServerRefreshCredentials()) {
-    return { token: null, errorReason: null };
-  }
-
-  if (forceRefresh) {
-    cachedServerRefreshToken = null;
-  }
-
-  if (cachedServerRefreshToken && Date.now() < cachedServerRefreshToken.expiresAtMs) {
-    return { token: cachedServerRefreshToken.accessToken, errorReason: null };
-  }
-
+async function performServerRefreshExchange(): Promise<RefreshExchangeResult> {
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -182,7 +297,12 @@ async function exchangeServerRefreshToken(forceRefresh = false): Promise<{
     });
 
     const payloadText = await res.text();
-    let parsed: { access_token?: string; expires_in?: number; error?: string; error_description?: string } = {};
+    let parsed: {
+      access_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_description?: string;
+    } = {};
     try {
       parsed = JSON.parse(payloadText) as typeof parsed;
     } catch {
@@ -193,19 +313,23 @@ async function exchangeServerRefreshToken(forceRefresh = false): Promise<{
       cachedServerRefreshToken = null;
       const oauthCode = (parsed.error || '').toLowerCase();
       let friendlyReason =
-        'Your Google Drive connection has expired. Reconnect Google Drive in the Admin Dashboard and retry your upload.';
+        'The server Google Drive refresh token is invalid or expired. Update GOOGLE_OAUTH_REFRESH_TOKEN or click "Connect Google Drive" in the Admin Dashboard.';
       let code: 'DRIVE_REFRESH_EXPIRED' | 'DRIVE_API_ERROR' = 'DRIVE_REFRESH_EXPIRED';
 
       if (oauthCode === 'invalid_grant') {
+        serverRefreshVerified = false;
         friendlyReason =
-          'Your server Google Drive refresh token has expired or been revoked (Google OAuth apps in Testing mode expire refresh tokens after 7 days). Reconnect Google Drive in the Admin Dashboard or update GOOGLE_OAUTH_REFRESH_TOKEN with a Production OAuth client.';
+          'Your server Google Drive refresh token has expired or been revoked (Google OAuth apps in Testing mode expire refresh tokens after 7 days). Update GOOGLE_OAUTH_REFRESH_TOKEN with a Production OAuth client or click "Connect Google Drive" in the Admin Dashboard.';
       } else if (oauthCode === 'invalid_client' || oauthCode === 'unauthorized_client') {
+        serverRefreshVerified = false;
         friendlyReason =
-          'Google rejected the server OAuth client credentials (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET). Verify deployment secrets or reconnect Google Drive in the Admin Dashboard.';
+          'Google rejected the server OAuth client credentials (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET). Verify server secrets or reconnect Google Drive in the Admin Dashboard.';
       } else if (res.status >= 500) {
         code = 'DRIVE_API_ERROR';
         friendlyReason =
           'Google OAuth service is temporarily unavailable while refreshing the Drive session. Please retry in a moment.';
+      } else {
+        serverRefreshVerified = false;
       }
 
       updateDriveState({ lastError: friendlyReason });
@@ -214,22 +338,28 @@ async function exchangeServerRefreshToken(forceRefresh = false): Promise<{
 
     if (!parsed.access_token) {
       cachedServerRefreshToken = null;
-      const reason = 'Google OAuth did not return an access token. Please reconnect Google Drive.';
+      serverRefreshVerified = false;
+      const reason =
+        'Google OAuth did not return an access token from the configured refresh token. Update GOOGLE_OAUTH_REFRESH_TOKEN or reconnect Google Drive.';
       updateDriveState({ lastError: reason });
       return { token: null, errorReason: reason, errorCode: 'DRIVE_REFRESH_EXPIRED' };
     }
 
-    const ttlMs = Math.max(60, (parsed.expires_in || 3600) - 300) * 1000;
+    const expiresInSec = Math.max(10, Number(parsed.expires_in) || 3600);
+    const bufferSec = expiresInSec > 600 ? 300 : Math.floor(expiresInSec * 0.15);
+    const ttlMs = Math.max(5, expiresInSec - bufferSec) * 1000;
+
     cachedServerRefreshToken = {
       accessToken: parsed.access_token,
       expiresAtMs: Date.now() + ttlMs
     };
+    serverRefreshVerified = true;
+    manuallyDisconnected = false;
 
     const currentState = readDriveState();
     if (
       currentState.lastError &&
-      (currentState.lastError.includes('refresh token') ||
-        currentState.lastError.includes('Google OAuth'))
+      /refresh token|google oauth|expired|revoked/i.test(currentState.lastError)
     ) {
       updateDriveState({ lastError: null });
     }
@@ -244,45 +374,109 @@ async function exchangeServerRefreshToken(forceRefresh = false): Promise<{
   }
 }
 
-export async function getServerRefreshAccessToken(): Promise<string | null> {
-  const res = await exchangeServerRefreshToken(false);
+async function exchangeServerRefreshToken(
+  forceRefresh = false
+): Promise<RefreshExchangeResult> {
+  if (!hasServerRefreshCredentials()) {
+    return { token: null, errorReason: null };
+  }
+
+  if (forceRefresh) {
+    cachedServerRefreshToken = null;
+  }
+
+  if (cachedServerRefreshToken && Date.now() < cachedServerRefreshToken.expiresAtMs) {
+    return { token: cachedServerRefreshToken.accessToken, errorReason: null };
+  }
+
+  if (!inFlightRefreshPromise) {
+    inFlightRefreshPromise = performServerRefreshExchange().finally(() => {
+      inFlightRefreshPromise = null;
+    });
+  }
+
+  return inFlightRefreshPromise;
+}
+
+export async function getServerRefreshAccessToken(
+  forceRefresh = false
+): Promise<string | null> {
+  const res = await exchangeServerRefreshToken(forceRefresh);
   return res.token;
 }
 
-export async function resolveAccessToken(
-  headerToken?: string,
-  forceRefresh = false
-): Promise<{ accessToken: string; source: 'header' | 'refresh' }> {
-  const cleanHeader = (headerToken || '').trim();
-  if (cleanHeader && !forceRefresh) {
-    return { accessToken: cleanHeader, source: 'header' };
-  }
+export interface ResolveAccessTokenOptions {
+  driveAccessTokenHeader?: string;
+  allowBrowserFallback?: boolean;
+  forceRefresh?: boolean;
+  audience?: 'admin' | 'public';
+}
 
+const PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG =
+  'Photo and video uploads are temporarily unavailable while the couple finishes configuring the wedding gallery storage. Please try again shortly or reach out to Mary & Joseph.';
+
+export async function resolveAccessToken(
+  options?: ResolveAccessTokenOptions
+): Promise<{ accessToken: string; source: 'refresh' | 'header' }> {
+  const cleanHeader = (options?.driveAccessTokenHeader || '').trim();
+  const allowBrowserFallback = Boolean(options?.allowBrowserFallback);
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const audience = options?.audience || 'public';
+
+  // 1. Server-side refresh token ALWAYS takes priority whenever configured.
+  //    A browser X-Google-Drive-Token header CANNOT override a valid server refresh mechanism.
   if (hasServerRefreshCredentials()) {
     const exchanged = await exchangeServerRefreshToken(forceRefresh);
     if (exchanged.token) {
       return { accessToken: exchanged.token, source: 'refresh' };
     }
+
+    // If server refresh credentials are invalid/revoked, ONLY an authenticated admin
+    // session explicitly providing a fresh browser token can fall back; public guest
+    // uploads must never silently depend on or wait for browser tokens.
+    if (allowBrowserFallback && cleanHeader && !forceRefresh) {
+      return { accessToken: cleanHeader, source: 'header' };
+    }
+
+    const message =
+      audience === 'admin'
+        ? exchanged.errorReason ||
+          'The server Google Drive refresh token is expired or revoked. Click "Connect Google Drive" to reconnect for admin uploads or update GOOGLE_OAUTH_REFRESH_TOKEN.'
+        : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG;
+
     throw new DriveStorageError(
-      exchanged.errorReason ||
-        'Your Google Drive connection has expired. Reconnect Google Drive and retry your upload.',
+      message,
       exchanged.errorCode === 'DRIVE_API_ERROR' ? 502 : 401,
       exchanged.errorCode || 'DRIVE_REFRESH_EXPIRED'
     );
   }
 
+  // 2. Server refresh credentials are NOT configured.
+  //    Authenticated admins can upload using their temporary browser OAuth session;
+  //    unattended public guest uploads cannot proceed without server credentials.
+  if (allowBrowserFallback && cleanHeader) {
+    return { accessToken: cleanHeader, source: 'header' };
+  }
+
+  const missingVars = getMissingServerEnvVars().filter((v) => v !== 'GOOGLE_DRIVE_FOLDER_ID');
+  const missingList = missingVars.join(', ') || 'GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN';
+
+  const adminMissingMsg = `Persistent server-side Google Drive OAuth credentials are missing (${missingList}). Unattended guest uploads require configuring those server environment variables. As an admin, click "Connect Google Drive" to upload during this browser session.`;
+
   throw new DriveStorageError(
-    'Google Drive is not connected for this session. Please open the Admin Dashboard and click "Connect Google Drive" with joepreserve@gmail.com to authorize uploads.',
+    audience === 'admin' ? adminMissingMsg : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG,
     401,
     'DRIVE_AUTH_MISSING'
   );
 }
 
-function getRequiredFolderId(): string {
+function getRequiredFolderId(audience: 'admin' | 'public' = 'admin'): string {
   const folderId = (process.env.GOOGLE_DRIVE_FOLDER_ID || '').trim();
   if (!folderId) {
     throw new DriveStorageError(
-      'GOOGLE_DRIVE_FOLDER_ID is not configured on the server. Add GOOGLE_DRIVE_FOLDER_ID in your deployment secrets before uploading to Google Drive.',
+      audience === 'admin'
+        ? 'GOOGLE_DRIVE_FOLDER_ID is not configured on the server. Add GOOGLE_DRIVE_FOLDER_ID in your deployment secrets before uploading to Google Drive.'
+        : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG,
       400,
       'DRIVE_NOT_CONFIGURED'
     );
@@ -302,10 +496,10 @@ async function driveJsonFetch<T>(url: string, accessToken: string, init?: Reques
   if (res.status === 401) {
     updateDriveState({
       oauthConnected: false,
-      lastError: 'Your Google Drive connection has expired. Reconnect Google Drive and retry your upload.'
+      lastError: 'Your Google Drive connection has expired. Reconnect Google Drive and retry.'
     });
     throw new DriveStorageError(
-      'Your Google Drive connection has expired. Reconnect Google Drive and retry your upload.',
+      'Your Google Drive authorization token was rejected (401). Reconnect Google Drive or refresh server credentials.',
       401,
       'DRIVE_AUTH_EXPIRED'
     );
@@ -349,8 +543,11 @@ async function driveJsonFetch<T>(url: string, accessToken: string, init?: Reques
   return (await res.json()) as T;
 }
 
-export async function verifyAndSaveDriveConnection(accessToken: string): Promise<DriveConnectionStatus> {
-  const folderId = getRequiredFolderId();
+export async function verifyAndSaveDriveConnection(
+  accessToken: string,
+  options?: { fromBrowserSession?: boolean }
+): Promise<DriveConnectionStatus> {
+  const folderId = getRequiredFolderId('admin');
 
   const about = await driveJsonFetch<{ user?: { emailAddress?: string; displayName?: string } }>(
     'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)',
@@ -385,6 +582,7 @@ export async function verifyAndSaveDriveConnection(accessToken: string): Promise
     );
   }
 
+  manuallyDisconnected = false;
   updateDriveState({
     oauthConnected: true,
     connectedEmail: about.user?.emailAddress || '',
@@ -393,7 +591,153 @@ export async function verifyAndSaveDriveConnection(accessToken: string): Promise
     lastError: null
   });
 
-  return getDriveConnectionStatus();
+  return getDriveConnectionStatus({
+    hasBrowserSession: Boolean(options?.fromBrowserSession)
+  });
+}
+
+export async function testServerRefreshTokenConnection(): Promise<DriveTestConnectionResponse> {
+  const configuredFolderId = Boolean((process.env.GOOGLE_DRIVE_FOLDER_ID || '').trim());
+  const refreshConfigured = hasServerRefreshCredentials();
+
+  if (!configuredFolderId) {
+    const driveStatus = getDriveConnectionStatus();
+    return {
+      ok: false,
+      refreshTokenConfigured: refreshConfigured,
+      refreshTokenValid: false,
+      tokenObtained: false,
+      folderVerified: false,
+      authMode: 'none',
+      message: 'GOOGLE_DRIVE_FOLDER_ID is missing from server environment variables.',
+      driveStatus
+    };
+  }
+
+  if (!refreshConfigured) {
+    const missing = getMissingServerEnvVars().join(', ');
+    const driveStatus = getDriveConnectionStatus();
+    return {
+      ok: false,
+      refreshTokenConfigured: false,
+      refreshTokenValid: false,
+      tokenObtained: false,
+      folderVerified: false,
+      authMode: 'none',
+      message: `Persistent server-side OAuth credentials are missing (${missing}). Configure them in deployment secrets to enable unattended guest uploads.`,
+      driveStatus
+    };
+  }
+
+  const exchanged = await exchangeServerRefreshToken(true);
+  if (!exchanged.token) {
+    return {
+      ok: false,
+      refreshTokenConfigured: true,
+      refreshTokenValid: false,
+      tokenObtained: false,
+      folderVerified: false,
+      authMode: 'none',
+      message:
+        exchanged.errorReason ||
+        'Server refresh token failed to obtain an access token from Google OAuth.',
+      driveStatus: getDriveConnectionStatus()
+    };
+  }
+
+  try {
+    const status = await verifyAndSaveDriveConnection(exchanged.token, {
+      fromBrowserSession: false
+    });
+    return {
+      ok: true,
+      refreshTokenConfigured: true,
+      refreshTokenValid: true,
+      tokenObtained: true,
+      folderVerified: true,
+      authMode: 'server_refresh_token',
+      message: `Server refresh token verified! Obtained a fresh access token and confirmed write access to "${status.folderName}". Unattended guest uploads are ready.`,
+      driveStatus: status
+    };
+  } catch (err) {
+    if (err instanceof DriveStorageError && err.code === 'DRIVE_AUTH_EXPIRED') {
+      serverRefreshVerified = false;
+    }
+    const msg =
+      err instanceof Error
+        ? err.message
+        : 'Obtained an access token from refresh token, but Google Drive folder verification failed.';
+    return {
+      ok: false,
+      refreshTokenConfigured: true,
+      refreshTokenValid: !(err instanceof DriveStorageError && err.code === 'DRIVE_AUTH_EXPIRED'),
+      tokenObtained: true,
+      folderVerified: false,
+      authMode: 'server_refresh_token',
+      message: msg,
+      driveStatus: getDriveConnectionStatus()
+    };
+  }
+}
+
+export async function testDriveConnection(
+  driveAccessTokenHeader?: string
+): Promise<DriveTestConnectionResponse> {
+  const cleanHeader = (driveAccessTokenHeader || '').trim();
+
+  // Always prefer server-side refresh token test whenever configured (cannot be overridden by browser header)
+  if (hasServerRefreshCredentials()) {
+    const refreshResult = await testServerRefreshTokenConnection();
+    if (refreshResult.ok || !cleanHeader) {
+      return refreshResult;
+    }
+
+    // Only if server refresh failed AND admin provided a browser token, test browser fallback explicitly
+    try {
+      const status = await verifyAndSaveDriveConnection(cleanHeader, {
+        fromBrowserSession: true
+      });
+      return {
+        ok: true,
+        refreshTokenConfigured: true,
+        refreshTokenValid: false,
+        tokenObtained: true,
+        folderVerified: true,
+        authMode: 'browser_session',
+        message: `Admin browser session verified for "${status.folderName}", but the server refresh token failed (${refreshResult.message}). Public unattended uploads remain unavailable until GOOGLE_OAUTH_REFRESH_TOKEN is fixed.`,
+        driveStatus: status
+      };
+    } catch (err) {
+      return {
+        ...refreshResult,
+        message:
+          err instanceof Error
+            ? `${refreshResult.message} Browser fallback also failed: ${err.message}`
+            : refreshResult.message
+      };
+    }
+  }
+
+  // Server refresh credentials not configured: allow testing browser session if provided,
+  // while clearly flagging missing server credentials.
+  if (cleanHeader) {
+    const status = await verifyAndSaveDriveConnection(cleanHeader, {
+      fromBrowserSession: true
+    });
+    const missing = getMissingServerEnvVars().join(', ');
+    return {
+      ok: true,
+      refreshTokenConfigured: false,
+      refreshTokenValid: false,
+      tokenObtained: true,
+      folderVerified: true,
+      authMode: 'browser_session',
+      message: `Connected via browser session only for "${status.folderName}". Server credentials (${missing}) are still missing, so unattended public guest uploads are not yet enabled.`,
+      driveStatus: status
+    };
+  }
+
+  return testServerRefreshTokenConnection();
 }
 
 async function findOrCreateSubfolder(
@@ -432,9 +776,12 @@ async function findOrCreateSubfolder(
   return created.id;
 }
 
-export async function ensureDriveFolderStructure(accessToken: string): Promise<DriveSubfolderMap> {
-  const folderId = getRequiredFolderId();
-  await verifyAndSaveDriveConnection(accessToken);
+export async function ensureDriveFolderStructure(
+  accessToken: string,
+  options?: { fromBrowserSession?: boolean }
+): Promise<DriveSubfolderMap> {
+  const folderId = getRequiredFolderId('admin');
+  await verifyAndSaveDriveConnection(accessToken, options);
 
   const state = readDriveState();
   const rootId =
@@ -474,18 +821,21 @@ export async function ensureDriveFolderStructure(accessToken: string): Promise<D
 
 export function disconnectDriveState(): DriveConnectionStatus {
   cachedServerRefreshToken = null;
+  inFlightRefreshPromise = null;
+  manuallyDisconnected = true;
   updateDriveState({
     oauthConnected: false,
-    connectedEmail: '',
+    connectedEmail: hasServerRefreshCredentials() ? readDriveState().connectedEmail : '',
     lastError: null
   });
-  return getDriveConnectionStatus();
+  return getDriveConnectionStatus({ hasBrowserSession: false });
 }
 
 async function resolveTargetFolder(
   accessToken: string,
   category: DriveMediaCategory,
-  mediaType: 'image' | 'video'
+  mediaType: 'image' | 'video',
+  fromBrowserSession: boolean
 ): Promise<{ folderId: string; label: string }> {
   const state = readDriveState();
   let map = state.subfolders;
@@ -500,7 +850,7 @@ async function resolveTargetFolder(
     !map.adminMediaId;
 
   if (needsInit) {
-    map = await ensureDriveFolderStructure(accessToken);
+    map = await ensureDriveFolderStructure(accessToken, { fromBrowserSession });
   }
 
   switch (category) {
@@ -532,15 +882,34 @@ export async function storeGalleryFileInDrive(params: {
   category: DriveMediaCategory;
   mediaType: 'image' | 'video';
   driveAccessTokenHeader?: string;
+  isAdminUpload?: boolean;
 }): Promise<StoredMediaResult> {
-  getRequiredFolderId();
-  let { accessToken, source } = await resolveAccessToken(params.driveAccessTokenHeader);
+  const audience: 'admin' | 'public' = params.isAdminUpload ? 'admin' : 'public';
+  getRequiredFolderId(audience);
 
-  const ext = path.extname(params.originalName).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10) || '.bin';
-  const cleanOriginal = path.basename(params.originalName).replace(/[^a-zA-Z0-9._\- ]/g, '_').slice(0, 100);
-  const uploadName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}_${cleanOriginal || `media${ext}`}`;
+  // Public guest uploads MUST strictly use server refresh credentials and never depend on browser headers
+  let { accessToken, source } = await resolveAccessToken({
+    driveAccessTokenHeader: params.isAdminUpload ? params.driveAccessTokenHeader : undefined,
+    allowBrowserFallback: Boolean(params.isAdminUpload),
+    audience
+  });
 
-  let target = await resolveTargetFolder(accessToken, params.category, params.mediaType);
+  const ext =
+    path.extname(params.originalName).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10) || '.bin';
+  const cleanOriginal = path
+    .basename(params.originalName)
+    .replace(/[^a-zA-Z0-9._\- ]/g, '_')
+    .slice(0, 100);
+  const uploadName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}_${
+    cleanOriginal || `media${ext}`
+  }`;
+
+  let target = await resolveTargetFolder(
+    accessToken,
+    params.category,
+    params.mediaType,
+    source === 'header'
+  );
 
   const uploadMultipart = async (parentFolderId: string, tokenToUse: string) => {
     const boundary = `mjay2026_${crypto.randomBytes(12).toString('hex')}`;
@@ -574,7 +943,11 @@ export async function storeGalleryFileInDrive(params: {
 
   // If cached server refresh token was invalidated mid-flight, force one clean refresh and retry once
   if (uploadRes.status === 401 && source === 'refresh') {
-    const retried = await resolveAccessToken(undefined, true);
+    const retried = await resolveAccessToken({
+      forceRefresh: true,
+      allowBrowserFallback: false,
+      audience
+    });
     accessToken = retried.accessToken;
     source = retried.source;
     uploadRes = await uploadMultipart(target.folderId, accessToken);
@@ -582,20 +955,33 @@ export async function storeGalleryFileInDrive(params: {
 
   // If cached subfolder ID was deleted on Drive, re-initialize folder tree once and retry
   if (uploadRes.status === 404) {
-    await ensureDriveFolderStructure(accessToken);
-    target = await resolveTargetFolder(accessToken, params.category, params.mediaType);
+    await ensureDriveFolderStructure(accessToken, { fromBrowserSession: source === 'header' });
+    target = await resolveTargetFolder(
+      accessToken,
+      params.category,
+      params.mediaType,
+      source === 'header'
+    );
     uploadRes = await uploadMultipart(target.folderId, accessToken);
   }
 
   if (uploadRes.status === 401) {
+    if (source === 'refresh') {
+      cachedServerRefreshToken = null;
+      serverRefreshVerified = false;
+    }
     const errorCode: DriveStorageErrorCode =
       source === 'refresh' ? 'DRIVE_REFRESH_EXPIRED' : 'DRIVE_AUTH_EXPIRED';
+    const adminMsg =
+      source === 'refresh'
+        ? 'The refreshed Google Drive access token was rejected (401). Reconnect Google Drive in the Admin Dashboard or update GOOGLE_OAUTH_REFRESH_TOKEN.'
+        : 'Your browser Google Drive session has expired. Click "Connect Google Drive" to reconnect and retry your upload.';
     updateDriveState({
       oauthConnected: source === 'header' ? false : readDriveState().oauthConnected,
-      lastError: 'Your Google Drive connection has expired. Reconnect Google Drive and retry your upload.'
+      lastError: adminMsg
     });
     throw new DriveStorageError(
-      'Your Google Drive connection has expired. Reconnect Google Drive and retry your upload.',
+      audience === 'admin' ? adminMsg : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG,
       401,
       errorCode
     );
@@ -604,10 +990,14 @@ export async function storeGalleryFileInDrive(params: {
   if (uploadRes.status === 403) {
     const errText = await uploadRes.text().catch(() => '');
     updateDriveState({
-      lastError: `Google Drive folder permission denied (403)${errText ? `: ${errText.slice(0, 140)}` : '.'}`
+      lastError: `Google Drive folder permission denied (403)${
+        errText ? `: ${errText.slice(0, 140)}` : '.'
+      }`
     });
     throw new DriveStorageError(
-      "You don't have permission to upload files to this Google Drive folder. Check the connected Drive account or folder permissions.",
+      audience === 'admin'
+        ? "You don't have permission to upload files to this Google Drive folder. Check the connected Drive account or folder permissions."
+        : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG,
       403,
       'DRIVE_PERMISSION_ERROR'
     );
@@ -618,7 +1008,9 @@ export async function storeGalleryFileInDrive(params: {
     let msg = `Google Drive upload failed (${uploadRes.status})`;
     try {
       const parsed = JSON.parse(errText) as { error?: { message?: string } };
-      if (parsed.error?.message) msg = `Google Drive upload failed (${uploadRes.status}): ${parsed.error.message}`;
+      if (parsed.error?.message) {
+        msg = `Google Drive upload failed (${uploadRes.status}): ${parsed.error.message}`;
+      }
     } catch {
       if (errText) msg = `Google Drive upload failed (${uploadRes.status}): ${errText.slice(0, 180)}`;
     }
@@ -652,7 +1044,9 @@ export async function storeGalleryFileInDrive(params: {
     }
   );
   if (!permRes.ok) {
-    console.warn(`Google Drive public reader permission warning for ${created.id}: ${permRes.status}`);
+    console.warn(
+      `Google Drive public reader permission warning for ${created.id}: ${permRes.status}`
+    );
   }
 
   updateDriveState({
@@ -698,8 +1092,11 @@ export async function deleteStoredGalleryFile(
   }
 
   if (storageProvider === 'google_drive' && driveFileId) {
-    let token: string | null = (driveAccessTokenHeader || '').trim() || null;
-    if (!token) token = await getServerRefreshAccessToken();
+    // Prefer server refresh token over browser session header whenever configured
+    let token: string | null = await getServerRefreshAccessToken();
+    if (!token) {
+      token = (driveAccessTokenHeader || '').trim() || null;
+    }
     if (!token) return;
 
     await fetch(
@@ -716,7 +1113,9 @@ export async function fetchDriveMediaStream(
   driveFileId: string,
   driveAccessTokenHeader?: string
 ): Promise<Response | null> {
-  const token = (driveAccessTokenHeader || '').trim() || (await getServerRefreshAccessToken());
+  // Prefer server refresh token over browser session header whenever configured
+  const token =
+    (await getServerRefreshAccessToken()) || (driveAccessTokenHeader || '').trim() || null;
   if (token) {
     const authRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveFileId)}?alt=media&supportsAllDrives=true`,
@@ -727,7 +1126,7 @@ export async function fetchDriveMediaStream(
     if (authRes.ok) return authRes;
   }
 
-  // Public anyone-with-link fallback for website visitors when no user OAuth session is active
+  // Public anyone-with-link fallback for website visitors when no server/user OAuth token is active
   const ucRes = await fetch(
     `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveFileId)}`,
     { redirect: 'follow' }
