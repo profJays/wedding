@@ -5,8 +5,12 @@ import path from 'node:path';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import {
-  getStorageConfigStatus,
-  storeGalleryFile,
+  DriveStorageError,
+  getDriveConnectionStatus,
+  verifyAndSaveDriveConnection,
+  ensureDriveFolderStructure,
+  disconnectDriveState,
+  storeGalleryFileInDrive,
   resolveLocalMediaPath,
   deleteStoredGalleryFile,
   fetchDriveMediaStream
@@ -15,6 +19,7 @@ import {
   verifyFirebaseIdToken,
   isAuthorizedWeddingAdmin
 } from './server/firebaseTokenVerifier.ts';
+import type { DriveMediaCategory } from './src/types.ts';
 
 interface FirebaseAppletConfig {
   projectId: string;
@@ -41,6 +46,15 @@ const ALLOWED_VIDEO_MIMES = new Set([
   'video/quicktime',
   'video/webm',
   'video/x-m4v'
+]);
+
+const VALID_CATEGORIES = new Set<DriveMediaCategory>([
+  'admin_media',
+  'website_homepage',
+  'website_story',
+  'website_schedule',
+  'guest_photo',
+  'guest_video'
 ]);
 
 function loadFirebaseConfig(): FirebaseAppletConfig {
@@ -89,6 +103,35 @@ function formatLagosTime(epochMs: number): string {
   }).format(new Date(epochMs));
 }
 
+async function requireAdminRequest(
+  req: express.Request,
+  res: express.Response,
+  cfg: FirebaseAppletConfig
+): Promise<{ uid: string; email: string } | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Administrator authentication required.' });
+    return null;
+  }
+  const rawToken = authHeader.slice('Bearer '.length).trim();
+  const tokenInfo = await verifyFirebaseIdToken(rawToken, cfg.projectId);
+  if (!tokenInfo) {
+    res.status(401).json({ error: 'Invalid or expired Firebase authentication token.' });
+    return null;
+  }
+  const allowed = await isAuthorizedWeddingAdmin(
+    tokenInfo,
+    cfg.projectId,
+    cfg.firestoreDatabaseId,
+    rawToken
+  );
+  if (!allowed) {
+    res.status(403).json({ error: 'Administrator privileges required.' });
+    return null;
+  }
+  return { uid: tokenInfo.uid, email: tokenInfo.email };
+}
+
 async function startServer() {
   const firebaseCfg = loadFirebaseConfig();
   const app = express();
@@ -106,21 +149,30 @@ async function startServer() {
 
   // Authoritative Server Health Check
   app.get('/api/health', (_req, res) => {
-    const storage = getStorageConfigStatus();
+    const driveStatus = getDriveConnectionStatus();
     res.json({
       ok: true,
       serverTimeMs: Date.now(),
       timezone: 'Africa/Lagos',
-      storageProvider: storage.activeProvider,
-      googleDriveConfigured: storage.googleDriveConfigured
+      storageProvider: 'google_drive',
+      googleDriveConfigured:
+        driveStatus.configuredFolderId &&
+        (driveStatus.oauthConnected || driveStatus.serverRefreshConfigured)
     });
   });
 
-  // Authoritative Server-Side Gallery Lock & Storage Status
+  // Server-Side Admin Verification Endpoint (Defense in Depth)
+  app.get('/api/admin/verify', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+    res.json({ authorized: true, uid: admin.uid, email: admin.email });
+  });
+
+  // Authoritative Server-Side Gallery Lock & Drive Storage Status
   app.get('/api/gallery/status', async (_req, res) => {
     const nowMs = Date.now();
     const { unlockISO, unlockEpochMs } = await resolveGalleryUnlockFromFirestore(firebaseCfg);
-    const storage = getStorageConfigStatus();
+    const driveStatus = getDriveConnectionStatus();
     const isUnlocked = nowMs >= unlockEpochMs;
 
     res.json({
@@ -131,9 +183,11 @@ async function startServer() {
       unlockAtEpochMs: unlockEpochMs,
       unlockAtLagosFormatted: formatLagosTime(unlockEpochMs),
       timezone: 'Africa/Lagos',
-      storageProvider: storage.activeProvider,
-      googleDriveConfigured: storage.googleDriveConfigured,
-      missingGoogleDriveEnvVars: storage.missingGoogleDriveEnvVars,
+      storageProvider: 'google_drive',
+      googleDriveConfigured:
+        driveStatus.configuredFolderId &&
+        (driveStatus.oauthConnected || driveStatus.serverRefreshConfigured),
+      driveStatus,
       limits: {
         maxImageBytes: MAX_IMAGE_BYTES,
         maxVideoBytes: MAX_VIDEO_BYTES,
@@ -142,7 +196,98 @@ async function startServer() {
     });
   });
 
-  // Server-Time Enforced Gallery Media Upload
+  // Admin: Get Google Drive Connection Status
+  app.get('/api/drive/status', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+    res.json(getDriveConnectionStatus());
+  });
+
+  // Admin: Verify OAuth Access Token + Target GOOGLE_DRIVE_FOLDER_ID
+  app.post('/api/drive/verify', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+
+    const driveToken = req.header('X-Google-Drive-Token') || '';
+    if (!driveToken.trim()) {
+      res.status(401).json({
+        error: 'Missing Google Drive OAuth token. Please click "Connect Google Drive" first.'
+      });
+      return;
+    }
+
+    try {
+      const status = await verifyAndSaveDriveConnection(driveToken.trim());
+      res.json(status);
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Drive verification failed.' });
+    }
+  });
+
+  // Admin: Initialize Wedding Folder Hierarchy inside GOOGLE_DRIVE_FOLDER_ID
+  app.post('/api/drive/folders/init', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+
+    const driveToken = req.header('X-Google-Drive-Token') || '';
+    if (!driveToken.trim()) {
+      res.status(401).json({
+        error: 'Google Drive OAuth token required to initialize folders. Click "Connect Google Drive" first.'
+      });
+      return;
+    }
+
+    try {
+      await ensureDriveFolderStructure(driveToken.trim());
+      res.json(getDriveConnectionStatus());
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Unable to initialize Google Drive folders.'
+      });
+    }
+  });
+
+  // Admin: Test Drive Connection + Permissions
+  app.post('/api/drive/test', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+
+    const driveToken = req.header('X-Google-Drive-Token') || '';
+    if (!driveToken.trim()) {
+      res.status(401).json({
+        error: 'Your browser Google Drive session is not active. Click "Reconnect Google Drive" to test.'
+      });
+      return;
+    }
+
+    try {
+      const status = await verifyAndSaveDriveConnection(driveToken.trim());
+      res.json({ ok: true, driveStatus: status });
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Drive test failed.' });
+    }
+  });
+
+  // Admin: Disconnect Google Drive Metadata State
+  app.post('/api/drive/disconnect', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+    res.json(disconnectDriveState());
+  });
+
+  // Server-Time Enforced Gallery & Admin Media Upload via Google Drive OAuth 2.0
   app.post('/api/gallery/upload', (req, res) => {
     upload.array('files', MAX_BATCH_FILES)(req, res, async (multerErr) => {
       if (multerErr) {
@@ -154,7 +299,6 @@ async function startServer() {
         const nowMs = Date.now();
         const { unlockISO, unlockEpochMs } = await resolveGalleryUnlockFromFirestore(firebaseCfg);
 
-        // Check if caller is an authenticated admin (admins can upload portraits early)
         let isAdminUpload = false;
         const authHeader = req.headers.authorization;
         if (authHeader?.startsWith('Bearer ')) {
@@ -172,7 +316,7 @@ async function startServer() {
 
         if (!isAdminUpload && nowMs < unlockEpochMs) {
           res.status(403).json({
-            error: `Gallery uploads are locked until Saturday, 12 December 2026 at 00:00 WAT (Africa/Lagos).`,
+            error: 'Gallery uploads are locked until Saturday, 12 December 2026 at 00:00 WAT (Africa/Lagos).',
             serverTimeMs: nowMs,
             unlockAtISO: unlockISO,
             unlockAtEpochMs: unlockEpochMs
@@ -186,6 +330,9 @@ async function startServer() {
           return;
         }
 
+        const rawCategory = String((req.body?.category as string | undefined) || '').trim() as DriveMediaCategory;
+        const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
+
         const uploaded: Array<{
           mediaType: 'image' | 'video';
           mimeType: string;
@@ -194,6 +341,8 @@ async function startServer() {
           driveFileId: string;
           sizeBytes: number;
           originalName: string;
+          category: DriveMediaCategory;
+          folderName: string;
         }> = [];
 
         for (const file of files) {
@@ -203,7 +352,7 @@ async function startServer() {
 
           if (!isImage && !isVideo) {
             res.status(400).json({
-              error: `Unsupported file format "${file.originalname}" (${file.mimetype}). Please upload JPEG, PNG, WebP, HEIC images or MP4, MOV, WebM videos.`
+              error: `Unsupported file format "${file.originalname}" (${file.mimetype}). Please upload JPEG, PNG, WebP, GIF, HEIC images or MP4, MOV, WebM videos.`
             });
             return;
           }
@@ -222,7 +371,23 @@ async function startServer() {
             return;
           }
 
-          const stored = await storeGalleryFile(file.buffer, file.originalname, mime);
+          const category: DriveMediaCategory = VALID_CATEGORIES.has(rawCategory)
+            ? rawCategory
+            : isAdminUpload
+            ? 'admin_media'
+            : isImage
+            ? 'guest_photo'
+            : 'guest_video';
+
+          const stored = await storeGalleryFileInDrive({
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: mime,
+            category,
+            mediaType: isImage ? 'image' : 'video',
+            driveAccessTokenHeader: driveTokenHeader
+          });
+
           uploaded.push({
             mediaType: isImage ? 'image' : 'video',
             mimeType: stored.mimeType,
@@ -230,7 +395,9 @@ async function startServer() {
             storageProvider: stored.storageProvider,
             driveFileId: stored.driveFileId,
             sizeBytes: stored.sizeBytes,
-            originalName: stored.originalName
+            originalName: stored.originalName,
+            category: stored.category,
+            folderName: stored.folderName
           });
         }
 
@@ -240,13 +407,17 @@ async function startServer() {
           isAdminUpload
         });
       } catch (err) {
+        if (err instanceof DriveStorageError) {
+          res.status(err.statusCode).json({ error: err.message, code: err.code });
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Upload processing error';
         res.status(500).json({ error: message });
       }
     });
   });
 
-  // Serve locally vaulted uploaded gallery media safely
+  // Serve legacy local media cleanly if any exist
   app.get('/api/gallery/media/:fileId', (req, res) => {
     const filePath = resolveLocalMediaPath(req.params.fileId);
     if (!filePath) {
@@ -260,7 +431,7 @@ async function startServer() {
     res.sendFile(filePath);
   });
 
-  // Proxy Google Drive uploaded media cleanly without leaking credentials
+  // Proxy Google Drive uploaded media cleanly without exposing tokens
   app.get('/api/gallery/drive/:driveFileId', async (req, res) => {
     const driveId = req.params.driveFileId.replace(/[^a-zA-Z0-9_\-]/g, '');
     if (!driveId) {
@@ -268,13 +439,15 @@ async function startServer() {
       return;
     }
     try {
-      const upstream = await fetchDriveMediaStream(driveId);
+      const optionalToken = req.header('X-Google-Drive-Token') || undefined;
+      const upstream = await fetchDriveMediaStream(driveId, optionalToken);
       if (!upstream || !upstream.ok) {
         res.status(404).json({ error: 'Drive media file unavailable' });
         return;
       }
       const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
       res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
       if (req.query.download === '1') {
         res.setHeader('Content-Disposition', `attachment; filename="mjay2026-${driveId}"`);
       }
@@ -288,36 +461,16 @@ async function startServer() {
   // Admin-Only Media File Deletion Endpoint
   app.delete('/api/gallery/media', async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        res.status(401).json({ error: 'Admin authentication required' });
-        return;
-      }
-
-      const rawToken = authHeader.slice('Bearer '.length).trim();
-      const tokenInfo = await verifyFirebaseIdToken(rawToken, firebaseCfg.projectId);
-      if (!tokenInfo) {
-        res.status(401).json({ error: 'Invalid authentication token' });
-        return;
-      }
-
-      const allowed = await isAuthorizedWeddingAdmin(
-        tokenInfo,
-        firebaseCfg.projectId,
-        firebaseCfg.firestoreDatabaseId,
-        rawToken
-      );
-      if (!allowed) {
-        res.status(403).json({ error: 'Administrator privileges required' });
-        return;
-      }
+      const admin = await requireAdminRequest(req, res, firebaseCfg);
+      if (!admin) return;
 
       const { storageProvider, driveFileId } = req.body as {
         storageProvider?: string;
         driveFileId?: string;
       };
+      const driveTokenHeader = req.header('X-Google-Drive-Token') || undefined;
       if (storageProvider && driveFileId) {
-        await deleteStoredGalleryFile(storageProvider, driveFileId);
+        await deleteStoredGalleryFile(storageProvider, driveFileId, driveTokenHeader);
       }
 
       res.json({ deleted: true });

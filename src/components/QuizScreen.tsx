@@ -12,6 +12,7 @@ interface QuizScreenProps {
   onBack: () => void;
   canGoBack: boolean;
   onReturnToWebsite: () => void;
+  canReturnToWebsite?: boolean;
 }
 
 export const QuizScreen: React.FC<QuizScreenProps> = ({
@@ -23,7 +24,8 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
   onNext,
   onBack,
   canGoBack,
-  onReturnToWebsite
+  onReturnToWebsite,
+  canReturnToWebsite = false
 }) => {
   const optionLetters = ['A', 'B', 'C', 'D', 'E'];
 
@@ -80,7 +82,7 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Back</span>
               </button>
-            ) : (
+            ) : canReturnToWebsite ? (
               <button
                 type="button"
                 onClick={onReturnToWebsite}
@@ -89,6 +91,10 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
                 <ArrowLeft className="w-3 h-3" />
                 <span>Back to Website</span>
               </button>
+            ) : (
+              <span className="text-[11px] font-medium tracking-wide text-[#737746]">
+                Wedding Challenge
+              </span>
             )}
           </div>
 
@@ -236,7 +242,7 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Previous</span>
               </button>
-            ) : (
+            ) : canReturnToWebsite ? (
               <button
                 type="button"
                 onClick={onReturnToWebsite}
@@ -244,6 +250,8 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
               >
                 Main Website
               </button>
+            ) : (
+              <span className="text-[11px] font-mono text-[#737746]">#mjay2026</span>
             )}
           </div>
 

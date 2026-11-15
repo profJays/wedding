@@ -23,7 +23,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
     function isBootstrappedAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'joepreserve@gmail.com';
+      return isVerifiedUser() && (
+        request.auth.uid == 'oFuTnbSimLQSRIaYzMIShk0oQm92'
+        || request.auth.token.email == 'joepreserve@gmail.com'
+      );
     }
     function isAdmin() {
       return isBootstrappedAdmin() || (
@@ -218,7 +221,7 @@ service cloud.firestore {
     // 1. Site Content & Settings
     match /siteContent/{contentId} {
       allow get: if isValidId(contentId);
-      allow list: if resource.data.coupleNames is string;
+      allow list: if isAdmin();
       allow create, update: if isAdmin()
         && isValidId(contentId)
         && isValidSiteContent(incoming())
@@ -226,10 +229,10 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(contentId);
     }
 
-    // 2. RSVP Records (Zero public read/list; write-once create for guests; full management for Admin)
+    // 2. RSVP Records (Zero public read/list; write-once create for guests; full management for verified Admin)
     match /rsvps/{rsvpId} {
       allow get: if isAdmin() && isValidId(rsvpId);
-      allow list: if isAdmin() && resource.data.fullName is string;
+      allow list: if isAdmin();
       allow create: if isValidId(rsvpId)
         && isRsvpCurrentlyOpen()
         && isValidRsvp(incoming(), getConfiguredMaxGuests())
@@ -270,7 +273,7 @@ service cloud.firestore {
     // 4. Admins RBAC registry
     match /admins/{adminUid} {
       allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
-      allow list: if isAdmin() && resource.data.uid is string;
+      allow list: if isAdmin();
       allow create, update: if isAdmin()
         && isValidId(adminUid)
         && isValidAdminUser(incoming(), adminUid)

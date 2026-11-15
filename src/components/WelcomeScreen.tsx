@@ -7,13 +7,15 @@ interface WelcomeScreenProps {
   onGuestNameChange: (name: string) => void;
   onStart: () => void;
   onReturnToWebsite: () => void;
+  canReturnToWebsite?: boolean;
 }
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   guestName,
   onGuestNameChange,
   onStart,
-  onReturnToWebsite
+  onReturnToWebsite,
+  canReturnToWebsite = false
 }) => {
   return (
     <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-8 animate-pop">
@@ -108,14 +110,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <ArrowRight className="w-4 h-4 text-[#F3E5AB] group-hover:translate-x-1 transition-transform" />
             </button>
 
-            <button
-              type="button"
-              onClick={onReturnToWebsite}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-[#07543E] hover:underline underline-offset-4 cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Return to Wedding Website</span>
-            </button>
+            {canReturnToWebsite && (
+              <button
+                type="button"
+                onClick={onReturnToWebsite}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#07543E] hover:underline underline-offset-4 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Return to Wedding Website</span>
+              </button>
+            )}
           </div>
 
           {/* Quick Etiquette Highlights */}

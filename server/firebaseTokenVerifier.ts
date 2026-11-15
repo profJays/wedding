@@ -93,6 +93,9 @@ export async function verifyFirebaseIdToken(
   }
 }
 
+const BOOTSTRAPPED_ADMIN_UID = 'oFuTnbSimLQSRIaYzMIShk0oQm92';
+const BOOTSTRAPPED_ADMIN_EMAIL = 'joepreserve@gmail.com';
+
 export async function isAuthorizedWeddingAdmin(
   tokenInfo: VerifiedFirebaseToken,
   projectId: string,
@@ -100,7 +103,12 @@ export async function isAuthorizedWeddingAdmin(
   rawIdToken: string
 ): Promise<boolean> {
   if (!tokenInfo.emailVerified) return false;
-  if (tokenInfo.email === 'joepreserve@gmail.com') return true;
+  if (
+    tokenInfo.uid === BOOTSTRAPPED_ADMIN_UID ||
+    tokenInfo.email.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL
+  ) {
+    return true;
+  }
 
   // Verify membership in Firestore /admins/{uid} using the caller's own ID token
   try {

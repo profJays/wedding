@@ -21,8 +21,9 @@ import { AppView, AnswerOption, SiteContentData } from './types';
 
 export default function App() {
   const [view, setView] = useState<AppView>(() =>
-    typeof window !== 'undefined' && window.location.hash === '#admin' ? 'admin' : 'website'
+    typeof window !== 'undefined' && window.location.hash === '#admin' ? 'admin' : 'invitation'
   );
+  const [hasEnteredWebsite, setHasEnteredWebsite] = useState<boolean>(false);
   const [siteContent, setSiteContent] = useState<SiteContentData>(DEFAULT_SITE_CONTENT);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [guestName, setGuestName] = useState<string>('');
@@ -79,6 +80,7 @@ export default function App() {
   const handleNavigateSection = (sectionId: string) => {
     clearAdminHash();
     if (view !== 'website') {
+      setHasEnteredWebsite(true);
       setView('website');
       window.setTimeout(() => {
         if (sectionId === 'top') {
@@ -114,6 +116,7 @@ export default function App() {
 
   const handleExploreWebsite = () => {
     clearAdminHash();
+    setHasEnteredWebsite(true);
     setView('website');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -147,6 +150,7 @@ export default function App() {
       setCurrentQuestionIndex((prev) => prev + 1);
     } else {
       setIsChallengePassed(true);
+      setHasEnteredWebsite(true);
       setView('approved');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -200,12 +204,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Full-screen luxury 3D digital invitation envelope
+  // Full-screen luxury 3D digital invitation envelope (First screen on public entry)
   if (view === 'invitation') {
     return (
       <InvitationScreen
         onContinue={handleContinueFromInvitation}
         onExploreWebsite={handleExploreWebsite}
+        canReturnToWebsite={hasEnteredWebsite}
       />
     );
   }
@@ -249,6 +254,7 @@ export default function App() {
               onGuestNameChange={setGuestName}
               onStart={handleStart}
               onReturnToWebsite={handleExploreWebsite}
+              canReturnToWebsite={hasEnteredWebsite}
             />
           )}
 
@@ -263,6 +269,7 @@ export default function App() {
               onBack={handleBack}
               canGoBack={currentQuestionIndex > 0}
               onReturnToWebsite={handleExploreWebsite}
+              canReturnToWebsite={hasEnteredWebsite}
             />
           )}
 
@@ -271,6 +278,7 @@ export default function App() {
               guestName={guestName}
               onTryAgain={handleTryAgain}
               onReturnToWebsite={handleExploreWebsite}
+              canReturnToWebsite={hasEnteredWebsite}
             />
           )}
 

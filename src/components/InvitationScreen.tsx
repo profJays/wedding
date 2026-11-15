@@ -5,6 +5,7 @@ import { Crest } from './Crest';
 interface InvitationScreenProps {
   onContinue: () => void;
   onExploreWebsite: () => void;
+  canReturnToWebsite?: boolean;
 }
 
 type EnvelopePhase = 'sealed' | 'breaking' | 'opened';
@@ -98,7 +99,8 @@ const BotanicalPatternSvg: React.FC<{ side: 'left' | 'right' }> = ({ side }) => 
 
 export const InvitationScreen: React.FC<InvitationScreenProps> = ({
   onContinue,
-  onExploreWebsite
+  onExploreWebsite,
+  canReturnToWebsite = false
 }) => {
   const [phase, setPhase] = useState<EnvelopePhase>('sealed');
   const [isLeaving, setIsLeaving] = useState(false);
@@ -286,14 +288,16 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                 <ArrowRight className="w-4 h-4 text-[#F3E5AB] group-hover:translate-x-1 transition-transform" />
               </button>
 
-              <button
-                type="button"
-                onClick={onExploreWebsite}
-                disabled={!isFlapsOpen}
-                className="mt-3 text-xs font-medium text-[#0F5132]/80 hover:text-[#0F5132] underline underline-offset-4 cursor-pointer transition-colors"
-              >
-                Or skip straight to the Wedding Website
-              </button>
+              {canReturnToWebsite && (
+                <button
+                  type="button"
+                  onClick={onExploreWebsite}
+                  disabled={!isFlapsOpen}
+                  className="mt-3 text-xs font-medium text-[#0F5132]/80 hover:text-[#0F5132] underline underline-offset-4 cursor-pointer transition-colors"
+                >
+                  Return to Wedding Website
+                </button>
+              )}
             </div>
           </div>
 
@@ -477,15 +481,17 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                 <p className="inline-block px-4 py-1.5 rounded-full bg-[#031B10]/70 border border-[#D4AF37]/40 font-sans text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-[#F3E5AB] shadow-md backdrop-blur-xs">
                   TAP THE SEAL TO OPEN YOUR INVITATION
                 </p>
-                <div>
-                  <button
-                    type="button"
-                    onClick={onExploreWebsite}
-                    className="text-[11px] text-[#F3E5AB]/80 hover:text-[#FCF6BA] underline underline-offset-4 cursor-pointer"
-                  >
-                    Return to Wedding Website
-                  </button>
-                </div>
+                {canReturnToWebsite && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={onExploreWebsite}
+                      className="text-[11px] text-[#F3E5AB]/80 hover:text-[#FCF6BA] underline underline-offset-4 cursor-pointer"
+                    >
+                      Return to Wedding Website
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}

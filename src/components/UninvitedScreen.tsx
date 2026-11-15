@@ -5,12 +5,14 @@ interface UninvitedScreenProps {
   guestName: string;
   onTryAgain: () => void;
   onReturnToWebsite: () => void;
+  canReturnToWebsite?: boolean;
 }
 
 export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
   guestName,
   onTryAgain,
-  onReturnToWebsite
+  onReturnToWebsite,
+  canReturnToWebsite = false
 }) => {
   const displayName = guestName.trim() || 'Guest';
 
@@ -81,13 +83,15 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
             <span>TRY AGAIN (CHOOSE WISELY)</span>
           </button>
 
-          <button
-            type="button"
-            onClick={onReturnToWebsite}
-            className="text-xs font-medium text-red-900/75 hover:text-red-950 underline underline-offset-4 cursor-pointer"
-          >
-            Return to Wedding Website
-          </button>
+          {canReturnToWebsite && (
+            <button
+              type="button"
+              onClick={onReturnToWebsite}
+              className="text-xs font-medium text-red-900/75 hover:text-red-950 underline underline-offset-4 cursor-pointer"
+            >
+              Return to Wedding Website
+            </button>
+          )}
         </div>
 
         <p className="text-[11px] text-red-700/60 mt-4 italic">

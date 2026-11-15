@@ -20,16 +20,20 @@ import {
   handleFirestoreError
 } from './firebase';
 import { DEFAULT_SITE_CONTENT } from '../data/weddingSite';
+import { getDriveAccessToken, clearExpiredDriveToken } from './driveOAuth';
 import {
   SiteContentData,
   RsvpRecord,
   GalleryItem,
   AdminUser,
-  GalleryServerStatus
+  GalleryServerStatus,
+  DriveConnectionStatus,
+  DriveMediaCategory
 } from '../types';
 
 const SITE_CONTENT_DOC_PATH = 'siteContent/main';
 const BOOTSTRAPPED_ADMIN_EMAIL = 'joepreserve@gmail.com';
+const BOOTSTRAPPED_ADMIN_UID = 'oFuTnbSimLQSRIaYzMIShk0oQm92';
 
 function toJsDate(val: unknown): Date | null {
   if (!val) return null;
@@ -195,21 +199,22 @@ export async function submitGuestRsvp(input: {
 
 export async function listAllRsvps(): Promise<RsvpRecord[]> {
   try {
-    const q = query(collection(db, 'rsvps'), orderBy('submittedAt', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        fullName: String(data.fullName || ''),
-        normalizedName: String(data.normalizedName || ''),
-        attending: Boolean(data.attending),
-        guestCount: Number(data.guestCount || 0),
-        message: String(data.message || ''),
-        submittedAt: toJsDate(data.submittedAt),
-        updatedAt: toJsDate(data.updatedAt)
-      };
-    });
+    const snap = await getDocs(collection(db, 'rsvps'));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          fullName: String(data.fullName || ''),
+          normalizedName: String(data.normalizedName || ''),
+          attending: Boolean(data.attending),
+          guestCount: Number(data.guestCount || 0),
+          message: String(data.message || ''),
+          submittedAt: toJsDate(data.submittedAt),
+          updatedAt: toJsDate(data.updatedAt)
+        };
+      })
+      .sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'rsvps');
   }
@@ -368,15 +373,20 @@ export async function uploadGalleryMediaFiles(params: {
   files: File[];
   guestName: string;
   caption: string;
+  category?: DriveMediaCategory;
   isAdmin?: boolean;
   onProgress?: (percent: number) => void;
 }): Promise<GalleryItem[]> {
   const formData = new FormData();
+  if (params.category) {
+    formData.append('category', params.category);
+  }
   params.files.forEach((f) => formData.append('files', f));
 
   const idToken = params.isAdmin && auth.currentUser
     ? await auth.currentUser.getIdToken()
     : null;
+  const driveToken = getDriveAccessToken();
 
   // Use XMLHttpRequest so callers receive real upload progress events
   const serverResponse = await new Promise<{
@@ -395,6 +405,9 @@ export async function uploadGalleryMediaFiles(params: {
     if (idToken) {
       xhr.setRequestHeader('Authorization', `Bearer ${idToken}`);
     }
+    if (driveToken) {
+      xhr.setRequestHeader('X-Google-Drive-Token', driveToken);
+    }
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable && params.onProgress) {
         params.onProgress(Math.round((ev.loaded / ev.total) * 100));
@@ -402,10 +415,25 @@ export async function uploadGalleryMediaFiles(params: {
     };
     xhr.onload = () => {
       try {
-        const body = JSON.parse(xhr.responseText || '{}');
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(body);
+        const body = JSON.parse(xhr.responseText || '{}') as {
+          error?: string;
+          code?: string;
+          uploaded?: Array<{
+            mediaType: 'image' | 'video';
+            mimeType: string;
+            fileUrl: string;
+            storageProvider: 'google_drive' | 'local_server';
+            driveFileId: string;
+            sizeBytes: number;
+            originalName: string;
+          }>;
+        };
+        if (xhr.status >= 200 && xhr.status < 300 && Array.isArray(body.uploaded)) {
+          resolve({ uploaded: body.uploaded });
         } else {
+          if (xhr.status === 401 && body.code === 'DRIVE_AUTH_EXPIRED') {
+            clearExpiredDriveToken();
+          }
           reject(new Error(body.error || `Upload failed (${xhr.status})`));
         }
       } catch {
@@ -482,12 +510,17 @@ export async function deleteGalleryItem(item: GalleryItem): Promise<void> {
   if (item.storageProvider !== 'site_asset' && item.driveFileId && auth.currentUser) {
     try {
       const token = await auth.currentUser.getIdToken();
+      const driveToken = getDriveAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      };
+      if (driveToken) {
+        headers['X-Google-Drive-Token'] = driveToken;
+      }
       await fetch('/api/gallery/media', {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({
           storageProvider: item.storageProvider,
           driveFileId: item.driveFileId
@@ -506,16 +539,115 @@ export async function deleteGalleryItem(item: GalleryItem): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Admin Authorization & RBAC Registry
+// 4. Google Drive OAuth Connection Admin Helpers
 // ---------------------------------------------------------------------------
+async function adminDriveFetch<T>(
+  endpoint: string,
+  method: 'GET' | 'POST',
+  driveAccessToken?: string
+): Promise<T> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator sign-in is required.');
+  const idToken = await user.getIdToken();
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${idToken}`
+  };
+  if (driveAccessToken) {
+    headers['X-Google-Drive-Token'] = driveAccessToken;
+  }
+
+  const res = await fetch(endpoint, { method, headers });
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  if (!res.ok) {
+    if (res.status === 401 && body.code === 'DRIVE_AUTH_EXPIRED') {
+      clearExpiredDriveToken();
+    }
+    throw new Error(body.error || `Drive request failed (${res.status})`);
+  }
+  return body as T;
+}
+
+export function fetchDriveConnectionStatusAdmin(): Promise<DriveConnectionStatus> {
+  return adminDriveFetch<DriveConnectionStatus>('/api/drive/status', 'GET');
+}
+
+export function verifyDriveConnectionWithServer(
+  driveAccessToken: string
+): Promise<DriveConnectionStatus> {
+  return adminDriveFetch<DriveConnectionStatus>('/api/drive/verify', 'POST', driveAccessToken);
+}
+
+export function initDriveFoldersWithServer(
+  driveAccessToken: string
+): Promise<DriveConnectionStatus> {
+  return adminDriveFetch<DriveConnectionStatus>('/api/drive/folders/init', 'POST', driveAccessToken);
+}
+
+export function testDriveConnectionWithServer(
+  driveAccessToken: string
+): Promise<{ ok: boolean; driveStatus: DriveConnectionStatus }> {
+  return adminDriveFetch<{ ok: boolean; driveStatus: DriveConnectionStatus }>(
+    '/api/drive/test',
+    'POST',
+    driveAccessToken
+  );
+}
+
+export function disconnectDriveWithServer(): Promise<DriveConnectionStatus> {
+  return adminDriveFetch<DriveConnectionStatus>('/api/drive/disconnect', 'POST');
+}
+
+// ---------------------------------------------------------------------------
+// 5. Admin Authorization & RBAC Registry
+// ---------------------------------------------------------------------------
+async function ensureBootstrappedAdminDoc(
+  uid: string,
+  email: string,
+  displayName: string
+): Promise<void> {
+  try {
+    const adminRef = doc(db, 'admins', uid);
+    const existing = await getDoc(adminRef);
+    if (!existing.exists()) {
+      await setDoc(adminRef, {
+        uid,
+        email: email.slice(0, 160),
+        displayName: (displayName || 'Wedding Owner').slice(0, 100),
+        addedAt: serverTimestamp(),
+        addedBy: uid
+      });
+    }
+  } catch (err) {
+    console.warn('Bootstrap admin record check:', err);
+  }
+}
+
 export async function checkCurrentUserIsAdmin(): Promise<boolean> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return false;
-  if (user.email === BOOTSTRAPPED_ADMIN_EMAIL) return true;
+
+  const isBootstrappedOwner =
+    user.uid === BOOTSTRAPPED_ADMIN_UID ||
+    (user.email || '').toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL;
+
+  if (isBootstrappedOwner) {
+    await ensureBootstrappedAdminDoc(
+      user.uid,
+      user.email || BOOTSTRAPPED_ADMIN_EMAIL,
+      user.displayName || 'Joseph (Wedding Owner)'
+    );
+    return true;
+  }
 
   try {
     const snap = await getDoc(doc(db, 'admins', user.uid));
-    return snap.exists();
+    if (!snap.exists()) return false;
+
+    const idToken = await user.getIdToken();
+    const res = await fetch('/api/admin/verify', {
+      headers: { Authorization: `Bearer ${idToken}` }
+    });
+    return res.ok;
   } catch {
     return false;
   }

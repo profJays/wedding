@@ -20,7 +20,11 @@ import {
   Loader2,
   ShieldCheck,
   HardDrive,
-  Search
+  Search,
+  FolderTree,
+  RefreshCw,
+  Link2,
+  Unlink
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -28,12 +32,22 @@ import {
   signOutAdmin
 } from '../services/firebase';
 import {
+  connectGoogleDrive,
+  getDriveAccessToken,
+  disconnectGoogleDrive
+} from '../services/driveOAuth';
+import {
   saveSiteContent,
   listAllRsvps,
   updateRsvpRecord,
   deleteRsvpRecord,
   exportRsvpsToCsv,
   fetchGalleryServerStatus,
+  fetchDriveConnectionStatusAdmin,
+  verifyDriveConnectionWithServer,
+  initDriveFoldersWithServer,
+  testDriveConnectionWithServer,
+  disconnectDriveWithServer,
   listAllGalleryItemsAdmin,
   uploadGalleryMediaFiles,
   moderateGalleryItem,
@@ -49,6 +63,8 @@ import {
   GalleryItem,
   AdminUser,
   GalleryServerStatus,
+  DriveConnectionStatus,
+  DriveMediaCategory,
   CoupleQAItem,
   WeddingScheduleEvent,
   GuestFAQItem
@@ -77,9 +93,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Admin data states
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
+  const [rsvpLoadError, setRsvpLoadError] = useState<string | null>(null);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [serverStatus, setServerStatus] = useState<GalleryServerStatus | null>(null);
+  const [driveStatus, setDriveStatus] = useState<DriveConnectionStatus | null>(null);
+  const [hasBrowserDriveToken, setHasBrowserDriveToken] = useState<boolean>(() =>
+    Boolean(getDriveAccessToken())
+  );
+  const [driveActionBusy, setDriveActionBusy] = useState<boolean>(false);
   const [loadingData, setLoadingData] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -104,6 +126,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
   const [editingMediaTitle, setEditingMediaTitle] = useState('');
   const [confirmDeleteMediaId, setConfirmDeleteMediaId] = useState<string | null>(null);
+  const [adminUploadCategory, setAdminUploadCategory] = useState<DriveMediaCategory>('admin_media');
   const [adminUploadCaption, setAdminUploadCaption] = useState('');
   const [adminUploadFiles, setAdminUploadFiles] = useState<File[]>([]);
   const [adminUploading, setAdminUploading] = useState(false);
@@ -122,17 +145,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const loadAllAdminData = async () => {
     if (!isAuthorizedAdmin) return;
     setLoadingData(true);
+    setRsvpLoadError(null);
     try {
-      const [rsvpList, mediaList, adminList, status] = await Promise.all([
+      const [rsvpResult, mediaResult, adminResult, statusResult, driveResult] = await Promise.allSettled([
         listAllRsvps(),
         listAllGalleryItemsAdmin(),
-        listAdmins().catch(() => []),
-        fetchGalleryServerStatus().catch(() => null)
+        listAdmins(),
+        fetchGalleryServerStatus(),
+        fetchDriveConnectionStatusAdmin()
       ]);
-      setRsvps(rsvpList);
-      setGalleryItems(mediaList);
-      setAdmins(adminList);
-      setServerStatus(status);
+
+      if (rsvpResult.status === 'fulfilled') {
+        setRsvps(rsvpResult.value);
+      } else {
+        const msg = rsvpResult.reason instanceof Error ? rsvpResult.reason.message : 'Unable to load RSVP records.';
+        setRsvpLoadError(msg);
+      }
+
+      if (mediaResult.status === 'fulfilled') {
+        setGalleryItems(mediaResult.value);
+      }
+      if (adminResult.status === 'fulfilled') {
+        setAdmins(adminResult.value);
+      }
+      if (statusResult.status === 'fulfilled') {
+        setServerStatus(statusResult.value);
+        if (driveResult.status !== 'fulfilled') {
+          setDriveStatus(statusResult.value.driveStatus);
+        }
+      }
+      if (driveResult.status === 'fulfilled') {
+        setDriveStatus(driveResult.value);
+      }
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
     } catch (err) {
       setBannerMessage({
         type: 'error',
@@ -148,6 +193,105 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       void loadAllAdminData();
     }
   }, [isAuthorizedAdmin]);
+
+  const handleConnectGoogleDrive = async () => {
+    setDriveActionBusy(true);
+    setBannerMessage(null);
+    try {
+      const { accessToken, email } = await connectGoogleDrive();
+      setHasBrowserDriveToken(true);
+      const nextStatus = await verifyDriveConnectionWithServer(accessToken);
+      setDriveStatus(nextStatus);
+      setBannerMessage({
+        type: 'success',
+        text: `Google Drive connected as ${nextStatus.connectedEmail || email} (Folder: "${nextStatus.folderName}").`
+      });
+    } catch (err) {
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Unable to connect Google Drive.'
+      });
+    } finally {
+      setDriveActionBusy(false);
+    }
+  };
+
+  const handleInitDriveFolders = async () => {
+    setDriveActionBusy(true);
+    setBannerMessage(null);
+    try {
+      let token = getDriveAccessToken();
+      if (!token) {
+        const connected = await connectGoogleDrive();
+        token = connected.accessToken;
+        setHasBrowserDriveToken(true);
+      }
+      const nextStatus = await initDriveFoldersWithServer(token);
+      setDriveStatus(nextStatus);
+      setBannerMessage({
+        type: 'success',
+        text: 'Wedding Google Drive folder structure ("Mary and Joseph Wedding") verified and initialized.'
+      });
+    } catch (err) {
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to initialize Drive folders.'
+      });
+    } finally {
+      setDriveActionBusy(false);
+    }
+  };
+
+  const handleTestDriveConnection = async () => {
+    setDriveActionBusy(true);
+    setBannerMessage(null);
+    try {
+      let token = getDriveAccessToken();
+      if (!token) {
+        const connected = await connectGoogleDrive();
+        token = connected.accessToken;
+        setHasBrowserDriveToken(true);
+      }
+      const res = await testDriveConnectionWithServer(token);
+      setDriveStatus(res.driveStatus);
+      setBannerMessage({
+        type: 'success',
+        text: `Drive connection verified! Upload target "${res.driveStatus.folderName}" is ready.`
+      });
+    } catch (err) {
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Google Drive connection test failed.'
+      });
+    } finally {
+      setDriveActionBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogleDrive = async () => {
+    setDriveActionBusy(true);
+    setBannerMessage(null);
+    try {
+      await disconnectGoogleDrive();
+      setHasBrowserDriveToken(false);
+      const nextStatus = await disconnectDriveWithServer();
+      setDriveStatus(nextStatus);
+      setBannerMessage({
+        type: 'success',
+        text: 'Google Drive session disconnected.'
+      });
+    } catch (err) {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Unable to disconnect Google Drive.'
+      });
+    } finally {
+      setDriveActionBusy(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setSignInError(null);
@@ -344,6 +488,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         files: adminUploadFiles,
         guestName: siteContent.coupleNames,
         caption: adminUploadCaption,
+        category: adminUploadCategory,
         isAdmin: true,
         onProgress: setAdminUploadProgress
       });
@@ -353,9 +498,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await loadAllAdminData();
       setBannerMessage({
         type: 'success',
-        text: 'Media uploaded and published directly to the approved gallery.'
+        text: 'Media uploaded to Google Drive and published to the approved gallery.'
       });
     } catch (err) {
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
       setBannerMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Admin upload failed.'
@@ -523,45 +669,157 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* Storage Provider Status */}
-          {serverStatus && (
-            <div className="p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <HardDrive className="w-5 h-5 text-[#07543E]" />
-                  <div>
-                    <h2 className="font-serif text-xl font-semibold text-[#07543E]">
-                      Media Storage &amp; Time Lock Status
-                    </h2>
-                    <p className="text-xs text-[#262820]/70">
-                      Current Server Time: {serverStatus.serverTimeLagosFormatted} ({serverStatus.timezone})
+          {/* Google Drive OAuth 2.0 Connection Panel */}
+          <div className="p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <HardDrive className="w-5 h-5 text-[#07543E] mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="font-serif text-xl sm:text-2xl font-semibold text-[#07543E]">
+                    Google Drive OAuth 2.0 Storage Connection
+                  </h2>
+                  {serverStatus && (
+                    <p className="text-xs text-[#262820]/70 mt-0.5">
+                      Server Time: {serverStatus.serverTimeLagosFormatted} ({serverStatus.timezone})
                     </p>
-                  </div>
+                  )}
                 </div>
-                <span
-                  className={`px-3 py-1 rounded-md text-xs font-semibold ${
-                    serverStatus.googleDriveConfigured
-                      ? 'bg-[#07543E] text-white'
-                      : 'bg-[#F2EBDD] text-[#07543E]'
-                  }`}
-                >
-                  {serverStatus.googleDriveConfigured
-                    ? 'Google Drive Connected'
-                    : 'Local Server Media Vault Active'}
-                </span>
               </div>
 
-              {!serverStatus.googleDriveConfigured && (
-                <p className="text-xs text-[#262820]/75 leading-relaxed">
-                  Guest uploads currently save to the local server media vault. To switch directly to a shared Google Drive folder, add these secrets to your server environment:{' '}
-                  <code className="font-mono text-[#07543E]">
-                    {serverStatus.missingGoogleDriveEnvVars.join(', ')}
-                  </code>
-                  .
+              <span
+                className={`px-3 py-1 rounded-md text-xs font-semibold ${
+                  !driveStatus?.configuredFolderId
+                    ? 'bg-red-100 text-red-900'
+                    : hasBrowserDriveToken && driveStatus.oauthConnected
+                    ? 'bg-[#07543E] text-white'
+                    : driveStatus.serverRefreshConfigured
+                    ? 'bg-[#07543E] text-white'
+                    : 'bg-amber-100 text-amber-900'
+                }`}
+              >
+                {!driveStatus?.configuredFolderId
+                  ? 'Missing GOOGLE_DRIVE_FOLDER_ID'
+                  : hasBrowserDriveToken && driveStatus.oauthConnected
+                  ? 'Connected (Active OAuth Session)'
+                  : driveStatus.serverRefreshConfigured
+                  ? 'Connected (Server Refresh Token)'
+                  : driveStatus.oauthConnected
+                  ? 'Session Expired — Reconnect'
+                  : 'Not Connected'}
+              </span>
+            </div>
+
+            {!driveStatus?.configuredFolderId && (
+              <div className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900 leading-relaxed">
+                <strong>Missing Configuration:</strong> <code className="font-mono">GOOGLE_DRIVE_FOLDER_ID</code> is not set in the server environment secrets. Configure the target Google Drive folder ID owned by <code className="font-mono">joepreserve@gmail.com</code> in Secrets and restart the server.
+              </div>
+            )}
+
+            {driveStatus?.lastError && (
+              <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>{driveStatus.lastError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
+                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+                  Connected Account
                 </p>
+                <p className="font-semibold text-[#07543E] mt-1 truncate">
+                  {driveStatus?.connectedEmail || 'Not authorized in this browser'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
+                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+                  Target Drive Folder
+                </p>
+                <p className="font-semibold text-[#07543E] mt-1 truncate">
+                  {driveStatus?.folderName || 'Pending verification'}
+                </p>
+                <p className="font-mono text-[10px] text-[#262820]/60 truncate">
+                  {driveStatus?.folderIdPreview || '—'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
+                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+                  Folder Hierarchy
+                </p>
+                <p className="font-semibold text-[#07543E] mt-1">
+                  {driveStatus?.subfoldersInitialized ? 'Initialized (Ready)' : 'Not initialized yet'}
+                </p>
+                <p className="text-[10px] text-[#262820]/60 truncate">
+                  Website · Guest Uploads · Admin Media
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
+                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+                  Last Upload
+                </p>
+                <p className="font-semibold text-[#07543E] mt-1">
+                  {driveStatus?.lastUploadAt
+                    ? new Intl.DateTimeFormat('en-GB', {
+                        timeZone: 'Africa/Lagos',
+                        dateStyle: 'medium',
+                        timeStyle: 'short'
+                      }).format(new Date(driveStatus.lastUploadAt))
+                    : 'No uploads yet'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => void handleConnectGoogleDrive()}
+                disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
+              >
+                <Link2 className="w-3.5 h-3.5 text-[#C5A04A]" />
+                <span>
+                  {hasBrowserDriveToken && driveStatus?.oauthConnected
+                    ? 'Reconnect Google Drive'
+                    : 'Connect Google Drive'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleInitDriveFolders()}
+                disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+              >
+                <FolderTree className="w-3.5 h-3.5" />
+                <span>Initialize Folder Structure</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleTestDriveConnection()}
+                disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${driveActionBusy ? 'animate-spin' : ''}`} />
+                <span>Test Connection</span>
+              </button>
+
+              {(hasBrowserDriveToken || driveStatus?.oauthConnected) && (
+                <button
+                  type="button"
+                  onClick={() => void handleDisconnectGoogleDrive()}
+                  disabled={driveActionBusy}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-50 disabled:opacity-50 text-red-700 text-xs font-semibold uppercase tracking-wider cursor-pointer ml-auto"
+                >
+                  <Unlink className="w-3.5 h-3.5" />
+                  <span>Disconnect Google Drive</span>
+                </button>
               )}
             </div>
-          )}
+          </div>
 
           {/* Recent Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1196,10 +1454,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
           </div>
 
+          {rsvpLoadError && (
+            <div role="alert" className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{rsvpLoadError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadAllAdminData()}
+                className="px-3 py-1.5 rounded-md bg-red-700 text-white text-xs font-semibold cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           <div className="rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 overflow-hidden">
             {filteredRsvps.length === 0 ? (
               <div className="p-10 text-center text-sm text-[#262820]/65">
-                No RSVP entries match your current filter.
+                {rsvpLoadError
+                  ? 'Could not load RSVP entries. Click Retry above.'
+                  : rsvps.length === 0
+                  ? 'No RSVP submissions have been recorded yet.'
+                  : 'No RSVP entries match your current filter.'}
               </div>
             ) : (
               <div className="divide-y divide-[#07543E]/10">
@@ -1348,9 +1626,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    await deleteRsvpRecord(r.id);
-                                    setConfirmDeleteRsvpId(null);
-                                    await loadAllAdminData();
+                                    try {
+                                      await deleteRsvpRecord(r.id);
+                                      setConfirmDeleteRsvpId(null);
+                                      await loadAllAdminData();
+                                      setBannerMessage({
+                                        type: 'success',
+                                        text: `Deleted RSVP for ${r.fullName}.`
+                                      });
+                                    } catch (err) {
+                                      setBannerMessage({
+                                        type: 'error',
+                                        text: err instanceof Error ? err.message : 'Unable to delete RSVP.'
+                                      });
+                                    }
                                   }}
                                   className="px-2.5 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold cursor-pointer"
                                 >
@@ -1397,14 +1686,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onSubmit={handleAdminUploadSubmit}
               className="lg:col-span-8 p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-4"
             >
-              <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
-                Upload Official Photos or Videos (Admin Bypass)
-              </h2>
-              <p className="text-xs text-[#262820]/70">
-                Admin uploads bypass the December 12 guest lock and publish immediately as approved.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
+                    Upload Official Photos or Videos to Google Drive
+                  </h2>
+                  <p className="text-xs text-[#262820]/70 mt-0.5">
+                    Admin uploads bypass the December 12 guest lock, save into the selected Google Drive subfolder, and publish immediately as approved.
+                  </p>
+                </div>
+                {!hasBrowserDriveToken && !driveStatus?.serverRefreshConfigured && (
+                  <button
+                    type="button"
+                    onClick={() => void handleConnectGoogleDrive()}
+                    disabled={driveActionBusy}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C5A04A]/20 border border-[#C5A04A] text-[#07543E] text-xs font-semibold cursor-pointer"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>Connect Google Drive First</span>
+                  </button>
+                )}
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <select
+                  value={adminUploadCategory}
+                  onChange={(e) => setAdminUploadCategory(e.target.value as DriveMediaCategory)}
+                  aria-label="Target Google Drive subfolder"
+                  className="px-3.5 py-2.5 text-sm rounded-lg border border-[#07543E]/20 bg-white"
+                >
+                  <option value="admin_media">Admin Media</option>
+                  <option value="website_homepage">Website Photos · Homepage</option>
+                  <option value="website_story">Website Photos · Our Story</option>
+                  <option value="website_schedule">Website Photos · Schedule</option>
+                  <option value="guest_photo">Guest Uploads · Photos</option>
+                  <option value="guest_video">Guest Uploads · Videos</option>
+                </select>
+
                 <input
                   type="text"
                   value={adminUploadCaption}
@@ -1412,6 +1730,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   placeholder="Optional title / caption"
                   className="px-3.5 py-2.5 text-sm rounded-lg border border-[#07543E]/20 bg-white"
                 />
+
                 <input
                   ref={adminFileInputRef}
                   type="file"

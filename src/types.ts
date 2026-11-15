@@ -116,6 +116,39 @@ export interface AdminUser {
   addedBy: string;
 }
 
+export type DriveMediaCategory =
+  | 'admin_media'
+  | 'website_homepage'
+  | 'website_story'
+  | 'website_schedule'
+  | 'guest_photo'
+  | 'guest_video';
+
+export interface DriveSubfolderMap {
+  rootId?: string;
+  websitePhotosId?: string;
+  homepageId?: string;
+  ourStoryId?: string;
+  scheduleId?: string;
+  guestUploadsId?: string;
+  guestPhotosId?: string;
+  guestVideosId?: string;
+  adminMediaId?: string;
+}
+
+export interface DriveConnectionStatus {
+  configuredFolderId: boolean;
+  folderIdPreview: string;
+  folderName: string;
+  oauthConnected: boolean;
+  connectedEmail: string;
+  serverRefreshConfigured: boolean;
+  lastUploadAt: string | null;
+  subfoldersInitialized: boolean;
+  subfolders: DriveSubfolderMap;
+  lastError: string | null;
+}
+
 export interface GalleryServerStatus {
   isUnlocked: boolean;
   serverTimeMs: number;
@@ -126,7 +159,7 @@ export interface GalleryServerStatus {
   timezone: string;
   storageProvider: 'google_drive' | 'local_server';
   googleDriveConfigured: boolean;
-  missingGoogleDriveEnvVars: string[];
+  driveStatus: DriveConnectionStatus;
   limits: {
     maxImageBytes: number;
     maxVideoBytes: number;
