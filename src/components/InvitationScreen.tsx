@@ -161,7 +161,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
   return (
     <section
       aria-label="Digital Wedding Invitation"
-      className={`relative min-h-screen w-full overflow-hidden emerald-linen flex flex-col items-center justify-center px-4 py-6 sm:py-10 transition-opacity duration-300 ${
+      className={`relative min-h-[100dvh] w-full overflow-hidden emerald-linen flex flex-col items-center justify-center px-3 min-[380px]:px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:py-10 transition-opacity duration-300 ${
         isLeaving ? 'opacity-0' : 'opacity-100'
       }`}
     >
@@ -212,7 +212,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
       {/* Main 3D Physical Envelope Container */}
       <div className="relative z-10 w-full max-w-[440px] sm:max-w-[500px] envelope-perspective">
         <div
-          className="relative w-full min-h-[530px] sm:min-h-[590px] rounded-2xl envelope-3d-stage"
+          className="relative w-full min-h-[468px] min-[380px]:min-h-[520px] sm:min-h-[590px] rounded-2xl envelope-3d-stage"
           style={{
             boxShadow:
               '0 30px 70px -15px rgba(0, 0, 0, 0.78), 0 0 40px rgba(212, 175, 55, 0.14)'
@@ -222,7 +222,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
               INNER IVORY INVITATION CARD (Revealed when flaps open)
           ========================================================= */}
           <div
-            className={`absolute inset-0 rounded-2xl bg-[#FAF7F0] p-3.5 sm:p-5 flex flex-col justify-between overflow-hidden transition-all duration-700 ${
+            className={`absolute inset-0 rounded-2xl bg-[#FAF7F0] p-3 min-[380px]:p-3.5 sm:p-5 flex flex-col justify-between overflow-hidden transition-all duration-700 ${
               isFlapsOpen
                 ? 'opacity-100 scale-100 animate-invitation-emerge'
                 : 'opacity-90 scale-[0.98]'
@@ -245,34 +245,34 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
               <div className="pointer-events-none absolute bottom-2.5 right-2.5 w-6 h-6 border-b-2 border-r-2 border-[#D4AF37]" />
 
               {/* Monogram Crest */}
-              <div className="mb-3 sm:mb-4">
+              <div className="mb-2.5 sm:mb-4">
                 <Crest size="md" />
               </div>
 
               {/* #mjay2026 Tag */}
-              <span className="font-mono text-[11px] font-semibold tracking-[0.26em] text-[#556B2F] mb-2">
+              <span className="font-mono text-xs font-semibold tracking-[0.22em] text-[#556B2F] mb-1.5 sm:mb-2">
                 #mjay2026
               </span>
 
               {/* Exact Required Message: "YOU ARE CORDIALLY INVITED" */}
-              <p className="font-sans text-xs sm:text-sm font-semibold tracking-[0.22em] uppercase text-[#B08A2E] mb-3">
+              <p className="font-sans text-xs sm:text-sm font-semibold tracking-[0.18em] sm:tracking-[0.22em] uppercase text-[#9A741B] mb-2 sm:mb-3">
                 YOU ARE CORDIALLY INVITED
               </p>
 
               {/* Couple Title: "Mary & Joseph" */}
-              <h1 className="font-serif text-4xl sm:text-5xl font-bold tracking-wide text-[#0F5132] leading-tight mb-3">
-                Mary <span className="font-script text-[#C59B27] font-normal text-4xl sm:text-5xl">&amp;</span> Joseph
+              <h1 className="font-serif text-[34px] min-[380px]:text-4xl sm:text-5xl font-bold tracking-wide text-[#0F5132] leading-tight mb-2.5 sm:mb-3">
+                Mary <span className="font-script text-[#B88926] font-normal text-4xl sm:text-5xl">&amp;</span> Joseph
               </h1>
 
               {/* Gold Divider */}
-              <div className="flex items-center justify-center gap-3 w-full max-w-[220px] my-3">
+              <div className="flex items-center justify-center gap-3 w-full max-w-[220px] my-2.5 sm:my-3">
                 <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent to-[#D4AF37]" />
                 <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-[#D4AF37]" />
               </div>
 
               {/* Exact Required Sub-Message */}
-              <p className="font-serif italic text-base sm:text-lg text-[#18261D]/85 leading-relaxed max-w-xs sm:max-w-sm mb-6">
+              <p className="font-serif italic text-[17px] sm:text-lg text-[#18261D]/85 leading-relaxed max-w-xs sm:max-w-sm mb-5 sm:mb-6">
                 Before you explore our celebration, we have a little challenge for you!
               </p>
 
@@ -281,7 +281,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                 type="button"
                 onClick={handleContinueClick}
                 disabled={!isFlapsOpen}
-                className="group relative inline-flex items-center justify-center gap-2.5 px-8 py-3.5 min-h-[48px] text-sm font-bold tracking-[0.2em] uppercase text-white bg-[#0F5132] hover:bg-[#0A3D24] active:scale-[0.98] transition-all rounded-xl shadow-lg border border-[#D4AF37]/70 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] focus-visible:ring-offset-2 overflow-hidden"
+                className="group relative inline-flex items-center justify-center gap-2.5 px-7 sm:px-8 py-3.5 min-h-[48px] text-sm font-bold tracking-[0.18em] uppercase text-white bg-[#0F5132] hover:bg-[#0A3D24] active:scale-[0.98] transition-all rounded-xl shadow-lg border border-[#D4AF37]/70 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] focus-visible:ring-offset-2 overflow-hidden"
               >
                 <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-[#F3E5AB]/25 to-transparent skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
                 <span>CONTINUE</span>
@@ -293,7 +293,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                   type="button"
                   onClick={onExploreWebsite}
                   disabled={!isFlapsOpen}
-                  className="mt-3 text-xs font-medium text-[#0F5132]/80 hover:text-[#0F5132] underline underline-offset-4 cursor-pointer transition-colors"
+                  className="mt-2 min-h-[44px] px-3 inline-flex items-center text-xs sm:text-sm font-medium text-[#0F5132]/85 hover:text-[#0F5132] underline underline-offset-4 cursor-pointer transition-colors"
                 >
                   Return to Wedding Website
                 </button>
@@ -382,13 +382,13 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
               CLOSED ENVELOPE TOP/BOTTOM MONOGRAM DETAILING & WAX SEAL
           ========================================================= */}
           {phase !== 'opened' && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-between py-9 sm:py-11 px-6 pointer-events-none">
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-between py-7 min-[380px]:py-9 sm:py-11 px-4 sm:px-6 pointer-events-none">
               {/* Top Envelope Gold Foil Header */}
               <div className="text-center">
-                <p className="font-sans text-[10px] sm:text-xs font-semibold tracking-[0.28em] uppercase text-[#F3E5AB]/85 mb-1">
+                <p className="font-sans text-xs font-semibold tracking-[0.22em] sm:tracking-[0.28em] uppercase text-[#F3E5AB]/90 mb-1">
                   Wedding Celebration
                 </p>
-                <p className="font-serif italic text-lg sm:text-xl text-[#FCF6BA] tracking-wide drop-shadow">
+                <p className="font-serif italic text-xl sm:text-2xl text-[#FCF6BA] tracking-wide drop-shadow">
                   Mary &amp; Joseph
                 </p>
               </div>
@@ -399,7 +399,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                   type="button"
                   onClick={handleOpenEnvelope}
                   aria-label="Tap the #mjay2026 gold wax seal to open your wedding invitation"
-                  className={`group relative w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#F3E5AB]/70 transition-transform active:scale-95 ${
+                  className={`group relative w-28 h-28 min-[380px]:w-32 min-[380px]:h-32 sm:w-36 sm:h-36 flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#F3E5AB]/70 transition-transform active:scale-95 ${
                     phase === 'breaking'
                       ? 'animate-seal-break pointer-events-none'
                       : 'animate-seal-pulse'
@@ -468,7 +468,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                   {/* Embossed #mjay2026 Text & Subtle Ornamental Detail Inside Seal */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none">
                     <span className="h-[1px] w-8 bg-gradient-to-r from-transparent via-[#FFF2B2]/80 to-transparent mb-1" />
-                    <span className="font-serif text-base sm:text-lg font-bold tracking-[0.06em] text-[#FFF8DC] drop-shadow-[0_1px_2px_rgba(65,42,3,0.9)]">
+                    <span className="font-serif text-[15px] min-[380px]:text-base sm:text-lg font-bold tracking-[0.06em] text-[#FFF8DC] drop-shadow-[0_1px_2px_rgba(65,42,3,0.9)]">
                       #mjay2026
                     </span>
                     <span className="mt-1 h-[1px] w-8 bg-gradient-to-r from-transparent via-[#FFF2B2]/80 to-transparent" />
@@ -477,8 +477,8 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
               </div>
 
               {/* Bottom Instruction Prompt */}
-              <div className="text-center space-y-2 pointer-events-auto">
-                <p className="inline-block px-4 py-1.5 rounded-full bg-[#031B10]/70 border border-[#D4AF37]/40 font-sans text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-[#F3E5AB] shadow-md backdrop-blur-xs">
+              <div className="text-center space-y-2 pointer-events-auto max-w-full">
+                <p className="inline-block px-3.5 sm:px-4 py-2 rounded-full bg-[#031B10]/75 border border-[#D4AF37]/45 font-sans text-xs font-semibold tracking-[0.12em] sm:tracking-[0.18em] uppercase text-[#F3E5AB] shadow-md backdrop-blur-xs">
                   TAP THE SEAL TO OPEN YOUR INVITATION
                 </p>
                 {canReturnToWebsite && (
@@ -486,7 +486,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                     <button
                       type="button"
                       onClick={onExploreWebsite}
-                      className="text-[11px] text-[#F3E5AB]/80 hover:text-[#FCF6BA] underline underline-offset-4 cursor-pointer"
+                      className="min-h-[44px] px-3 inline-flex items-center text-xs sm:text-sm text-[#F3E5AB]/85 hover:text-[#FCF6BA] underline underline-offset-4 cursor-pointer"
                     >
                       Return to Wedding Website
                     </button>

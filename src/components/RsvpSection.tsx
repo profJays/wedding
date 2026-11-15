@@ -84,36 +84,36 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
     >
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-10 sm:mb-12">
-          <p className="text-xs uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+          <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
             RSVP
           </p>
-          <h2 className="font-serif text-3xl sm:text-5xl font-semibold text-[#07543E] text-balance mb-3">
+          <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-3">
             Kindly Respond
           </h2>
-          <p className="text-sm sm:text-base text-[#262820]/75 max-w-lg mx-auto leading-relaxed">
+          <p className="text-base sm:text-lg text-[#262820]/80 max-w-lg mx-auto leading-relaxed">
             Let {coupleNames} know if you will join the celebration in Abuja.
           </p>
           <div className="mt-6 h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent" />
         </div>
 
         {!rsvpOpen ? (
-          <div className="p-8 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 text-center space-y-2">
-            <p className="font-serif text-2xl text-[#07543E]">
+          <div className="p-6 sm:p-8 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 text-center space-y-2.5">
+            <p className="font-serif text-2xl sm:text-3xl text-[#07543E]">
               RSVP Submissions Are Currently Paused
             </p>
-            <p className="text-sm text-[#262820]/75">
+            <p className="text-base text-[#262820]/80">
               Please contact {contactName || 'Victoria'} on {contactPhone || '+2348031234567'} for guest list assistance.
             </p>
           </div>
         ) : submittedRecord ? (
-          <div className="p-8 sm:p-10 rounded-xl bg-[#FFFDF8] border border-[#C5A04A]/45 text-center space-y-4">
+          <div className="p-6 sm:p-10 rounded-xl bg-[#FFFDF8] border border-[#C5A04A]/45 text-center space-y-4">
             <div className="w-12 h-12 mx-auto rounded-full bg-[#07543E]/10 text-[#07543E] flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <h3 className="font-serif text-3xl font-semibold text-[#07543E]">
               Thank You, {submittedRecord.fullName}
             </h3>
-            <p className="text-sm sm:text-base text-[#262820]/80 max-w-md mx-auto leading-relaxed">
+            <p className="text-base text-[#262820]/80 max-w-md mx-auto leading-relaxed">
               {submittedRecord.attending
                 ? `Your RSVP has been recorded (${submittedRecord.guestCount} ${
                     submittedRecord.guestCount === 1 ? 'guest' : 'guests'
@@ -130,7 +130,7 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
                   setGuestCount(1);
                   setMessage('');
                 }}
-                className="text-xs font-semibold text-[#07543E] underline underline-offset-4 cursor-pointer"
+                className="min-h-[44px] inline-flex items-center text-sm font-semibold text-[#07543E] underline underline-offset-4 cursor-pointer"
               >
                 Submit an RSVP for another guest
               </button>
@@ -140,12 +140,12 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
           <form
             onSubmit={handleSubmit}
             noValidate
-            className="p-6 sm:p-10 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-6"
+            className="p-5 min-[360px]:p-6 sm:p-10 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-6"
           >
             {error && (
               <div
                 role="alert"
-                className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs sm:text-sm flex items-start gap-2.5"
+                className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm flex items-start gap-2.5 leading-relaxed"
               >
                 <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
                 <span>{error}</span>
@@ -156,7 +156,7 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
             <div>
               <label
                 htmlFor="rsvp-full-name"
-                className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2"
+                className="block text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2"
               >
                 Full Name <span className="text-red-700">*</span>
               </label>
@@ -168,13 +168,13 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Enter your full name"
-                className="w-full px-4 py-3 text-sm rounded-lg border border-[#07543E]/20 bg-white text-[#262820] placeholder-[#262820]/40 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15"
+                className="w-full px-4 py-3 min-h-[48px] text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-white text-[#262820] placeholder-[#262820]/45 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15"
               />
             </div>
 
             {/* Attendance Response */}
             <fieldset>
-              <legend className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2.5">
+              <legend className="block text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2.5">
                 Will you be joining us? <span className="text-red-700">*</span>
               </legend>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -185,20 +185,20 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
                     if (guestCount < 1) setGuestCount(1);
                   }}
                   aria-pressed={attending === 'yes'}
-                  className={`px-4 py-3.5 rounded-lg border text-sm font-medium text-left transition-colors cursor-pointer ${
+                  className={`px-4 py-3.5 min-h-[48px] rounded-lg border text-sm sm:text-base font-medium text-left transition-colors cursor-pointer ${
                     attending === 'yes'
                       ? 'bg-[#07543E] text-white border-[#07543E]'
                       : 'bg-white text-[#262820] border-[#07543E]/20 hover:border-[#C5A04A]'
                   }`}
                 >
-                  Attending — wouldn't miss it
+                  Attending — wouldn&apos;t miss it
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setAttending('no')}
                   aria-pressed={attending === 'no'}
-                  className={`px-4 py-3.5 rounded-lg border text-sm font-medium text-left transition-colors cursor-pointer ${
+                  className={`px-4 py-3.5 min-h-[48px] rounded-lg border text-sm sm:text-base font-medium text-left transition-colors cursor-pointer ${
                     attending === 'no'
                       ? 'bg-[#073B2B] text-white border-[#073B2B]'
                       : 'bg-white text-[#262820] border-[#07543E]/20 hover:border-[#C5A04A]'
@@ -214,7 +214,7 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
               <div>
                 <label
                   htmlFor="rsvp-guest-count"
-                  className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2"
+                  className="block text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2"
                 >
                   Number of Guests
                 </label>
@@ -223,7 +223,7 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
                     id="rsvp-guest-count"
                     value={guestCount}
                     onChange={(e) => setGuestCount(Number(e.target.value))}
-                    className="w-full px-4 py-3 text-sm rounded-lg border border-[#07543E]/20 bg-white text-[#262820] focus:outline-none focus:border-[#07543E]"
+                    className="w-full px-4 py-3 min-h-[48px] text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-white text-[#262820] focus:outline-none focus:border-[#07543E]"
                   >
                     {Array.from({ length: maxGuestsPerRsvp }, (_, i) => i + 1).map((num) => (
                       <option key={num} value={num}>
@@ -232,7 +232,7 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
                     ))}
                   </select>
                 ) : (
-                  <p className="px-4 py-3 text-sm rounded-lg border border-[#07543E]/15 bg-[#FAF7F0] text-[#262820]/80">
+                  <p className="px-4 py-3 min-h-[48px] flex items-center text-sm sm:text-base rounded-lg border border-[#07543E]/15 bg-[#FAF7F0] text-[#262820]/80">
                     1 Guest (Individual invitation seat)
                   </p>
                 )}
@@ -243,9 +243,9 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
             <div>
               <label
                 htmlFor="rsvp-message"
-                className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2"
+                className="block text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] text-[#07543E] mb-2"
               >
-                Message to the Couple <span className="font-normal text-[#262820]/50">(Optional)</span>
+                Message to the Couple <span className="font-normal text-[#262820]/55">(Optional)</span>
               </label>
               <textarea
                 id="rsvp-message"
@@ -254,14 +254,14 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Share a warm note, blessing, or dietary note for Mary & Joseph..."
-                className="w-full px-4 py-3 text-sm rounded-lg border border-[#07543E]/20 bg-white text-[#262820] placeholder-[#262820]/40 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15"
+                className="w-full px-4 py-3 text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-white text-[#262820] placeholder-[#262820]/45 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15"
               />
             </div>
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-60 text-white text-xs sm:text-sm font-semibold uppercase tracking-[0.16em] transition-colors cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-60 text-white text-sm font-semibold uppercase tracking-[0.16em] transition-colors cursor-pointer"
             >
               {submitting ? (
                 <>

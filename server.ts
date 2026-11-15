@@ -19,7 +19,13 @@ import {
   verifyFirebaseIdToken,
   isAuthorizedWeddingAdmin
 } from './server/firebaseTokenVerifier.ts';
-import type { DriveMediaCategory } from './src/types.ts';
+import type {
+  DriveMediaCategory,
+  UploadBatchResponse,
+  UploadErrorCode,
+  UploadFileResult,
+  UploadedFileMetadata
+} from './src/types.ts';
 
 interface FirebaseAppletConfig {
   projectId: string;
@@ -47,6 +53,61 @@ const ALLOWED_VIDEO_MIMES = new Set([
   'video/webm',
   'video/x-m4v'
 ]);
+
+const EXTENSION_TO_IMAGE_MIME: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif'
+};
+
+const EXTENSION_TO_VIDEO_MIME: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.m4v': 'video/x-m4v'
+};
+
+function classifyUploadedFile(file: Express.Multer.File): {
+  mediaType: 'image' | 'video' | 'unsupported';
+  canonicalMime: string;
+} {
+  const mime = (file.mimetype || '').toLowerCase().trim();
+  const ext = path.extname(file.originalname || '').toLowerCase();
+
+  if (ALLOWED_IMAGE_MIMES.has(mime)) {
+    return { mediaType: 'image', canonicalMime: mime === 'image/jpg' ? 'image/jpeg' : mime };
+  }
+  if (ALLOWED_VIDEO_MIMES.has(mime)) {
+    return { mediaType: 'video', canonicalMime: mime };
+  }
+  if ((!mime || mime === 'application/octet-stream') && ext in EXTENSION_TO_IMAGE_MIME) {
+    return { mediaType: 'image', canonicalMime: EXTENSION_TO_IMAGE_MIME[ext] };
+  }
+  if ((!mime || mime === 'application/octet-stream') && ext in EXTENSION_TO_VIDEO_MIME) {
+    return { mediaType: 'video', canonicalMime: EXTENSION_TO_VIDEO_MIME[ext] };
+  }
+  return { mediaType: 'unsupported', canonicalMime: mime || 'application/octet-stream' };
+}
+
+function parseClientFileIds(raw: unknown, count: number): string[] {
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return Array.from({ length: count }, (_, i) => String(parsed[i] || `file_${i}`));
+      }
+    } catch {
+      // Single string or invalid JSON
+    }
+  } else if (Array.isArray(raw)) {
+    return Array.from({ length: count }, (_, i) => String(raw[i] || `file_${i}`));
+  }
+  return Array.from({ length: count }, (_, i) => `file_${i}`);
+}
 
 const VALID_CATEGORIES = new Set<DriveMediaCategory>([
   'admin_media',
@@ -211,7 +272,8 @@ async function startServer() {
     const driveToken = req.header('X-Google-Drive-Token') || '';
     if (!driveToken.trim()) {
       res.status(401).json({
-        error: 'Missing Google Drive OAuth token. Please click "Connect Google Drive" first.'
+        error: 'Missing Google Drive OAuth token. Please click "Connect Google Drive" first.',
+        code: 'DRIVE_AUTH_MISSING'
       });
       return;
     }
@@ -224,7 +286,7 @@ async function startServer() {
         res.status(err.statusCode).json({ error: err.message, code: err.code });
         return;
       }
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Drive verification failed.' });
+      res.status(500).json({ error: 'Drive verification failed. Please retry.' });
     }
   });
 
@@ -236,7 +298,8 @@ async function startServer() {
     const driveToken = req.header('X-Google-Drive-Token') || '';
     if (!driveToken.trim()) {
       res.status(401).json({
-        error: 'Google Drive OAuth token required to initialize folders. Click "Connect Google Drive" first.'
+        error: 'Google Drive OAuth token required to initialize folders. Click "Connect Google Drive" first.',
+        code: 'DRIVE_AUTH_MISSING'
       });
       return;
     }
@@ -249,9 +312,7 @@ async function startServer() {
         res.status(err.statusCode).json({ error: err.message, code: err.code });
         return;
       }
-      res.status(500).json({
-        error: err instanceof Error ? err.message : 'Unable to initialize Google Drive folders.'
-      });
+      res.status(500).json({ error: 'Unable to initialize Google Drive folders. Please retry.' });
     }
   });
 
@@ -263,7 +324,8 @@ async function startServer() {
     const driveToken = req.header('X-Google-Drive-Token') || '';
     if (!driveToken.trim()) {
       res.status(401).json({
-        error: 'Your browser Google Drive session is not active. Click "Reconnect Google Drive" to test.'
+        error: 'Your browser Google Drive session is not active. Click "Reconnect Google Drive" to test.',
+        code: 'DRIVE_AUTH_MISSING'
       });
       return;
     }
@@ -276,7 +338,7 @@ async function startServer() {
         res.status(err.statusCode).json({ error: err.message, code: err.code });
         return;
       }
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Drive test failed.' });
+      res.status(500).json({ error: 'Drive connection test failed. Please retry.' });
     }
   });
 
@@ -291,7 +353,35 @@ async function startServer() {
   app.post('/api/gallery/upload', (req, res) => {
     upload.array('files', MAX_BATCH_FILES)(req, res, async (multerErr) => {
       if (multerErr) {
-        res.status(400).json({ error: multerErr.message || 'Invalid upload payload.' });
+        if (multerErr instanceof multer.MulterError) {
+          if (multerErr.code === 'LIMIT_FILE_COUNT' || multerErr.code === 'LIMIT_UNEXPECTED_FILE') {
+            res.status(400).json({
+              error: `You selected more than ${MAX_BATCH_FILES} files. You can upload a maximum of ${MAX_BATCH_FILES} files at a time.`,
+              code: 'TOO_MANY_FILES',
+              uploaded: [],
+              results: [],
+              summary: { total: 0, succeeded: 0, failed: 0 }
+            });
+            return;
+          }
+          if (multerErr.code === 'LIMIT_FILE_SIZE') {
+            res.status(400).json({
+              error: 'One or more selected files exceed the 100 MB video upload limit (or 15 MB photo limit). Please compress the file or choose a smaller version.',
+              code: 'VIDEO_TOO_LARGE',
+              uploaded: [],
+              results: [],
+              summary: { total: 0, succeeded: 0, failed: 0 }
+            });
+            return;
+          }
+        }
+        res.status(400).json({
+          error: 'Invalid upload request. Please verify your selected files and try again.',
+          code: 'VALIDATION_ERROR',
+          uploaded: [],
+          results: [],
+          summary: { total: 0, succeeded: 0, failed: 0 }
+        });
         return;
       }
 
@@ -317,102 +407,248 @@ async function startServer() {
         if (!isAdminUpload && nowMs < unlockEpochMs) {
           res.status(403).json({
             error: 'Gallery uploads are locked until Saturday, 12 December 2026 at 00:00 WAT (Africa/Lagos).',
+            code: 'GALLERY_LOCKED',
             serverTimeMs: nowMs,
             unlockAtISO: unlockISO,
-            unlockAtEpochMs: unlockEpochMs
+            unlockAtEpochMs: unlockEpochMs,
+            uploaded: [],
+            results: [],
+            summary: { total: 0, succeeded: 0, failed: 0 }
           });
           return;
         }
 
         const files = (req.files as Express.Multer.File[] | undefined) || [];
         if (files.length === 0) {
-          res.status(400).json({ error: 'Please select at least one photograph or video to upload.' });
+          res.status(400).json({
+            error: 'Please select at least one photo or video to upload.',
+            code: 'VALIDATION_ERROR',
+            uploaded: [],
+            results: [],
+            summary: { total: 0, succeeded: 0, failed: 0 }
+          });
           return;
         }
 
+        const clientFileIds = parseClientFileIds(req.body?.clientFileIds, files.length);
         const rawCategory = String((req.body?.category as string | undefined) || '').trim() as DriveMediaCategory;
         const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
 
-        const uploaded: Array<{
+        // 1. Validate every file upfront so partial or invalid batches return clear per-file reasons
+        const results: UploadFileResult[] = new Array(files.length);
+        const validQueue: Array<{
+          index: number;
+          file: Express.Multer.File;
+          clientFileId: string;
           mediaType: 'image' | 'video';
-          mimeType: string;
-          fileUrl: string;
-          storageProvider: 'google_drive' | 'local_server';
-          driveFileId: string;
-          sizeBytes: number;
-          originalName: string;
-          category: DriveMediaCategory;
-          folderName: string;
+          canonicalMime: string;
         }> = [];
 
-        for (const file of files) {
-          const mime = file.mimetype.toLowerCase();
-          const isImage = ALLOWED_IMAGE_MIMES.has(mime);
-          const isVideo = ALLOWED_VIDEO_MIMES.has(mime);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const clientFileId = clientFileIds[i];
+          const classified = classifyUploadedFile(file);
 
-          if (!isImage && !isVideo) {
-            res.status(400).json({
-              error: `Unsupported file format "${file.originalname}" (${file.mimetype}). Please upload JPEG, PNG, WebP, GIF, HEIC images or MP4, MOV, WebM videos.`
-            });
-            return;
+          if (file.size <= 0) {
+            results[i] = {
+              clientFileId,
+              originalName: file.originalname,
+              status: 'rejected',
+              errorCode: 'FILE_EMPTY',
+              errorMessage: `${file.originalname} appears to be empty or corrupted (0 bytes). Please choose a valid photo or video.`
+            };
+            continue;
           }
 
-          if (isImage && file.size > MAX_IMAGE_BYTES) {
-            res.status(400).json({
-              error: `Image "${file.originalname}" exceeds the 15 MB image size limit.`
-            });
-            return;
+          if (classified.mediaType === 'unsupported') {
+            results[i] = {
+              clientFileId,
+              originalName: file.originalname,
+              status: 'rejected',
+              errorCode: 'UNSUPPORTED_FORMAT',
+              errorMessage: `We couldn't upload ${file.originalname} because this file format is not supported. Please select an image or video in one of the supported formats.`
+            };
+            continue;
           }
 
-          if (isVideo && file.size > MAX_VIDEO_BYTES) {
-            res.status(400).json({
-              error: `Video "${file.originalname}" exceeds the 100 MB video size limit.`
-            });
-            return;
+          if (classified.mediaType === 'image' && file.size > MAX_IMAGE_BYTES) {
+            const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+            results[i] = {
+              clientFileId,
+              originalName: file.originalname,
+              status: 'rejected',
+              errorCode: 'IMAGE_TOO_LARGE',
+              errorMessage: `${file.originalname} is ${sizeMb} MB. The maximum photo size is 15 MB. Please compress this image or choose a smaller version.`
+            };
+            continue;
+          }
+
+          if (classified.mediaType === 'video' && file.size > MAX_VIDEO_BYTES) {
+            const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+            results[i] = {
+              clientFileId,
+              originalName: file.originalname,
+              status: 'rejected',
+              errorCode: 'VIDEO_TOO_LARGE',
+              errorMessage: `${file.originalname} is ${sizeMb} MB. The maximum video size is 100 MB. Please compress the video or select a smaller version.`
+            };
+            continue;
+          }
+
+          validQueue.push({
+            index: i,
+            file,
+            clientFileId,
+            mediaType: classified.mediaType,
+            canonicalMime: classified.canonicalMime
+          });
+        }
+
+        // If zero files passed validation, fail immediately with 400 and all errors
+        if (validQueue.length === 0) {
+          const firstErr = results.find((r) => r.errorMessage);
+          res.status(400).json({
+            uploaded: [],
+            results,
+            summary: { total: files.length, succeeded: 0, failed: files.length },
+            error: firstErr?.errorMessage || 'Selected files did not pass validation.',
+            code: firstErr?.errorCode || 'VALIDATION_ERROR'
+          } satisfies UploadBatchResponse);
+          return;
+        }
+
+        // 2. Upload valid files to Google Drive individually, preserving partial progress
+        const uploaded: UploadedFileMetadata[] = [];
+        let blockingDriveError: DriveStorageError | null = null;
+
+        for (let qIdx = 0; qIdx < validQueue.length; qIdx++) {
+          const entry = validQueue[qIdx];
+
+          if (blockingDriveError) {
+            results[entry.index] = {
+              clientFileId: entry.clientFileId,
+              originalName: entry.file.originalname,
+              status: 'failed',
+              errorCode: blockingDriveError.code,
+              errorMessage: blockingDriveError.message
+            };
+            continue;
           }
 
           const category: DriveMediaCategory = VALID_CATEGORIES.has(rawCategory)
             ? rawCategory
             : isAdminUpload
             ? 'admin_media'
-            : isImage
+            : entry.mediaType === 'image'
             ? 'guest_photo'
             : 'guest_video';
 
-          const stored = await storeGalleryFileInDrive({
-            buffer: file.buffer,
-            originalName: file.originalname,
-            mimeType: mime,
-            category,
-            mediaType: isImage ? 'image' : 'video',
-            driveAccessTokenHeader: driveTokenHeader
-          });
+          try {
+            const stored = await storeGalleryFileInDrive({
+              buffer: entry.file.buffer,
+              originalName: entry.file.originalname,
+              mimeType: entry.canonicalMime,
+              category,
+              mediaType: entry.mediaType,
+              driveAccessTokenHeader: driveTokenHeader
+            });
 
-          uploaded.push({
-            mediaType: isImage ? 'image' : 'video',
-            mimeType: stored.mimeType,
-            fileUrl: stored.fileUrl,
-            storageProvider: stored.storageProvider,
-            driveFileId: stored.driveFileId,
-            sizeBytes: stored.sizeBytes,
-            originalName: stored.originalName,
-            category: stored.category,
-            folderName: stored.folderName
-          });
+            const itemMeta: UploadedFileMetadata = {
+              mediaType: entry.mediaType,
+              mimeType: stored.mimeType,
+              fileUrl: stored.fileUrl,
+              storageProvider: stored.storageProvider,
+              driveFileId: stored.driveFileId,
+              sizeBytes: stored.sizeBytes,
+              originalName: stored.originalName,
+              category: stored.category,
+              folderName: stored.folderName
+            };
+
+            uploaded.push(itemMeta);
+            results[entry.index] = {
+              clientFileId: entry.clientFileId,
+              originalName: entry.file.originalname,
+              status: 'uploaded',
+              item: itemMeta
+            };
+          } catch (err) {
+            if (err instanceof DriveStorageError) {
+              const isFatalBlocker =
+                err.code === 'DRIVE_NOT_CONFIGURED' ||
+                err.code === 'DRIVE_AUTH_MISSING' ||
+                err.code === 'DRIVE_AUTH_EXPIRED' ||
+                err.code === 'DRIVE_REFRESH_EXPIRED' ||
+                err.code === 'DRIVE_PERMISSION_ERROR';
+
+              if (isFatalBlocker) {
+                blockingDriveError = err;
+              }
+
+              results[entry.index] = {
+                clientFileId: entry.clientFileId,
+                originalName: entry.file.originalname,
+                status: 'failed',
+                errorCode: err.code,
+                errorMessage: err.message
+              };
+            } else {
+              results[entry.index] = {
+                clientFileId: entry.clientFileId,
+                originalName: entry.file.originalname,
+                status: 'failed',
+                errorCode: 'SERVER_ERROR',
+                errorMessage:
+                  'Something went wrong on our end while uploading this file. Please retry.'
+              };
+            }
+          }
         }
 
-        res.status(201).json({
+        const failedCount = files.length - uploaded.length;
+        const needsDriveReconnect = Boolean(
+          blockingDriveError &&
+            (blockingDriveError.code === 'DRIVE_AUTH_MISSING' ||
+              blockingDriveError.code === 'DRIVE_AUTH_EXPIRED' ||
+              blockingDriveError.code === 'DRIVE_REFRESH_EXPIRED')
+        );
+
+        const firstFailure = results.find((r) => r.status !== 'uploaded');
+        const payload: UploadBatchResponse = {
           uploaded,
+          results,
+          summary: {
+            total: files.length,
+            succeeded: uploaded.length,
+            failed: failedCount
+          },
+          needsDriveReconnect,
           serverTimeMs: nowMs,
-          isAdminUpload
-        });
-      } catch (err) {
-        if (err instanceof DriveStorageError) {
-          res.status(err.statusCode).json({ error: err.message, code: err.code });
-          return;
+          isAdminUpload,
+          ...(failedCount > 0
+            ? {
+                error: blockingDriveError?.message || firstFailure?.errorMessage || 'Some files could not be uploaded.',
+                code: (blockingDriveError?.code || firstFailure?.errorCode || 'SERVER_ERROR') as UploadErrorCode
+              }
+            : {})
+        };
+
+        if (uploaded.length === files.length) {
+          res.status(201).json(payload);
+        } else if (uploaded.length > 0) {
+          res.status(207).json(payload);
+        } else {
+          const status = blockingDriveError?.statusCode || 502;
+          res.status(status).json(payload);
         }
-        const message = err instanceof Error ? err.message : 'Upload processing error';
-        res.status(500).json({ error: message });
+      } catch {
+        res.status(500).json({
+          error: 'Something went wrong on our end while uploading your files. Please try again in a moment.',
+          code: 'SERVER_ERROR',
+          uploaded: [],
+          results: [],
+          summary: { total: 0, succeeded: 0, failed: 0 }
+        });
       }
     });
   });

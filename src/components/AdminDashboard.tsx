@@ -24,7 +24,9 @@ import {
   FolderTree,
   RefreshCw,
   Link2,
-  Unlink
+  Unlink,
+  RotateCcw,
+  Info
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -69,6 +71,16 @@ import {
   WeddingScheduleEvent,
   GuestFAQItem
 } from '../types';
+import {
+  FILE_INPUT_ACCEPT,
+  MAX_BATCH_FILES,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  SelectedUploadEntry,
+  createSelectedUploadEntry,
+  formatFileSize,
+  validateUploadEntries
+} from '../utils/uploadValidation';
 
 interface AdminDashboardProps {
   siteContent: SiteContentData;
@@ -128,9 +140,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [confirmDeleteMediaId, setConfirmDeleteMediaId] = useState<string | null>(null);
   const [adminUploadCategory, setAdminUploadCategory] = useState<DriveMediaCategory>('admin_media');
   const [adminUploadCaption, setAdminUploadCaption] = useState('');
-  const [adminUploadFiles, setAdminUploadFiles] = useState<File[]>([]);
+  const [adminUploadEntries, setAdminUploadEntries] = useState<SelectedUploadEntry[]>([]);
   const [adminUploading, setAdminUploading] = useState(false);
   const [adminUploadProgress, setAdminUploadProgress] = useState(0);
+  const [adminUploadError, setAdminUploadError] = useState<string | null>(null);
+  const [adminBatchSummaryNotice, setAdminBatchSummaryNotice] = useState<string | null>(null);
+  const [adminNeedsDriveReconnect, setAdminNeedsDriveReconnect] = useState(false);
   const adminFileInputRef = useRef<HTMLInputElement>(null);
 
   // Add Admin form
@@ -202,6 +217,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setHasBrowserDriveToken(true);
       const nextStatus = await verifyDriveConnectionWithServer(accessToken);
       setDriveStatus(nextStatus);
+      setAdminNeedsDriveReconnect(false);
       setBannerMessage({
         type: 'success',
         text: `Google Drive connected as ${nextStatus.connectedEmail || email} (Folder: "${nextStatus.folderName}").`
@@ -362,6 +378,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return galleryItems.filter((item) => item.status === galleryFilter);
   }, [galleryItems, galleryFilter]);
 
+  const adminLimits = useMemo(
+    () => ({
+      maxBatchFiles: serverStatus?.limits.maxBatchFiles || MAX_BATCH_FILES,
+      maxImageBytes: serverStatus?.limits.maxImageBytes || MAX_IMAGE_BYTES,
+      maxVideoBytes: serverStatus?.limits.maxVideoBytes || MAX_VIDEO_BYTES
+    }),
+    [serverStatus]
+  );
+
+  const adminValidationReport = useMemo(
+    () => validateUploadEntries(adminUploadEntries, adminLimits),
+    [adminUploadEntries, adminLimits]
+  );
+
+  const adminFailedEntries = useMemo(
+    () => adminValidationReport.entries.filter((entry) => entry.uploadStatus === 'failed'),
+    [adminValidationReport.entries]
+  );
+
   // -------------------------------------------------------------------------
   // Gate 1: Auth Loading
   // -------------------------------------------------------------------------
@@ -477,52 +512,180 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // -------------------------------------------------------------------------
   // Main Authenticated Admin Dashboard
   // -------------------------------------------------------------------------
-  const handleAdminUploadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminUploadFiles.length === 0) return;
+  const handleAdminFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (adminUploading) return;
+    setAdminUploadError(null);
+    setAdminBatchSummaryNotice(null);
+    setBannerMessage(null);
+
+    const incoming = Array.from(e.target.files || []);
+    if (incoming.length === 0) return;
+
+    setAdminUploadEntries((prev) => {
+      const existing = new Set(
+        prev.map((item) => `${item.file.name}::${item.file.size}::${item.file.lastModified}`)
+      );
+      const additions = incoming
+        .filter(
+          (file) => !existing.has(`${file.name}::${file.size}::${file.lastModified}`)
+        )
+        .map((file) => createSelectedUploadEntry(file, adminLimits));
+      return [...prev, ...additions];
+    });
+
+    if (adminFileInputRef.current) {
+      adminFileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAdminFile = (id: string) => {
+    if (adminUploading) return;
+    setAdminUploadEntries((prev) => prev.filter((item) => item.id !== id));
+    setAdminUploadError(null);
+    setAdminBatchSummaryNotice(null);
+  };
+
+  const handleClearAdminFiles = () => {
+    if (adminUploading) return;
+    setAdminUploadEntries([]);
+    setAdminUploadError(null);
+    setAdminBatchSummaryNotice(null);
+    if (adminFileInputRef.current) adminFileInputRef.current.value = '';
+  };
+
+  const executeAdminUploadBatch = async (entriesToSend: SelectedUploadEntry[]) => {
+    if (adminUploading || entriesToSend.length === 0) return;
+
+    const report = validateUploadEntries(entriesToSend, adminLimits);
+    if (report.hasErrors) {
+      setAdminUploadError('Please remove or fix the invalid files listed below before uploading.');
+      return;
+    }
+
+    const sendIds = new Set(entriesToSend.map((entry) => entry.id));
     setAdminUploading(true);
     setAdminUploadProgress(0);
+    setAdminUploadError(null);
+    setAdminBatchSummaryNotice(null);
     setBannerMessage(null);
+
+    setAdminUploadEntries((prev) =>
+      prev.map((entry) =>
+        sendIds.has(entry.id)
+          ? { ...entry, uploadStatus: 'uploading', uploadError: null }
+          : entry
+      )
+    );
+
     try {
-      await uploadGalleryMediaFiles({
-        files: adminUploadFiles,
+      const outcome = await uploadGalleryMediaFiles({
+        entries: entriesToSend.map((entry) => ({ id: entry.id, file: entry.file })),
         guestName: siteContent.coupleNames,
         caption: adminUploadCaption,
         category: adminUploadCategory,
         isAdmin: true,
         onProgress: setAdminUploadProgress
       });
-      setAdminUploadFiles([]);
-      setAdminUploadCaption('');
-      if (adminFileInputRef.current) adminFileInputRef.current.value = '';
-      await loadAllAdminData();
-      setBannerMessage({
-        type: 'success',
-        text: 'Media uploaded to Google Drive and published to the approved gallery.'
-      });
+
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      if (outcome.needsDriveReconnect) {
+        setAdminNeedsDriveReconnect(true);
+      }
+
+      const resultById = new Map(outcome.results.map((r) => [r.clientFileId, r]));
+
+      if (outcome.summary.failed === 0 && outcome.summary.succeeded > 0) {
+        setAdminUploadEntries((prev) => prev.filter((entry) => !sendIds.has(entry.id)));
+        setAdminUploadCaption('');
+        setAdminNeedsDriveReconnect(false);
+        if (adminFileInputRef.current) adminFileInputRef.current.value = '';
+        await loadAllAdminData();
+        setBannerMessage({
+          type: 'success',
+          text: `${outcome.summary.succeeded} ${
+            outcome.summary.succeeded === 1 ? 'file' : 'files'
+          } uploaded to Google Drive and published to the approved gallery.`
+        });
+      } else if (outcome.summary.succeeded > 0 && outcome.summary.failed > 0) {
+        // Remove already-uploaded items so retrying never creates duplicate Drive/Firestore entries
+        setAdminUploadEntries((prev) =>
+          prev
+            .filter((entry) => {
+              const res = resultById.get(entry.id);
+              return !(res && res.status === 'uploaded');
+            })
+            .map((entry) => {
+              const res = resultById.get(entry.id);
+              if (!res) return entry;
+              return {
+                ...entry,
+                uploadStatus: 'failed',
+                uploadError: res.errorMessage || outcome.globalError || 'Upload failed.'
+              };
+            })
+        );
+        await loadAllAdminData();
+        setAdminBatchSummaryNotice(
+          `${outcome.summary.total} files selected. ${outcome.summary.succeeded} uploaded successfully. ${outcome.summary.failed} failed.`
+        );
+        setAdminUploadError(
+          outcome.globalError ||
+            'Some files failed to upload. Review the file errors below and click "Retry Failed Files Only".'
+        );
+      } else {
+        setAdminUploadEntries((prev) =>
+          prev.map((entry) => {
+            const res = resultById.get(entry.id);
+            if (!res) return entry;
+            return {
+              ...entry,
+              uploadStatus: 'failed',
+              uploadError: res.errorMessage || outcome.globalError || 'Upload failed.'
+            };
+          })
+        );
+        setAdminUploadError(
+          outcome.globalError || 'Admin upload failed. Review the details below and try again.'
+        );
+      }
     } catch (err) {
       setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
-      setBannerMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Admin upload failed.'
-      });
+      const msg = err instanceof Error ? err.message : 'Admin upload failed.';
+      setAdminUploadEntries((prev) =>
+        prev.map((entry) =>
+          sendIds.has(entry.id)
+            ? { ...entry, uploadStatus: 'failed', uploadError: msg }
+            : entry
+        )
+      );
+      setAdminUploadError(msg);
     } finally {
       setAdminUploading(false);
     }
   };
 
+  const handleAdminUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await executeAdminUploadBatch(adminValidationReport.entries);
+  };
+
+  const handleAdminRetryFailedOnly = async () => {
+    if (adminFailedEntries.length === 0) return;
+    await executeAdminUploadBatch(adminFailedEntries);
+  };
+
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+    <div className="w-full max-w-6xl mx-auto px-3.5 min-[360px]:px-4 sm:px-6 py-6 sm:py-12">
       {/* Top Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 mb-6 border-b border-[#07543E]/15">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.2em] text-[#737746] font-semibold">
             {siteContent.coupleNames} · {siteContent.hashtag}
           </p>
-          <h1 className="font-serif text-3xl sm:text-4xl font-semibold text-[#07543E]">
+          <h1 className="font-serif text-3xl sm:text-4xl font-semibold text-[#07543E] leading-tight">
             Couple Admin Dashboard
           </h1>
-          <p className="text-xs text-[#262820]/65 mt-1">
+          <p className="text-xs sm:text-sm text-[#262820]/70 mt-1 break-all">
             Signed in as {currentUser.email}
           </p>
         </div>
@@ -531,27 +694,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <button
             type="button"
             onClick={onReturnToWebsite}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-xs font-semibold text-[#07543E] cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-xs sm:text-sm font-semibold text-[#07543E] cursor-pointer"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-4 h-4" />
             <span>View Live Site</span>
           </button>
           <button
             type="button"
             onClick={() => void signOutAdmin()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-50 text-xs font-semibold text-red-700 cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-red-200 bg-white hover:bg-red-50 text-xs sm:text-sm font-semibold text-red-700 cursor-pointer"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-4 h-4" />
             <span>Sign Out</span>
           </button>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs (Horizontally scrollable on narrow mobile phones, wrapped on tablet/desktop) */}
       <div
         role="tablist"
         aria-label="Admin dashboard sections"
-        className="flex flex-wrap gap-2 pb-6 mb-6 border-b border-[#07543E]/10"
+        className="flex overflow-x-auto sm:flex-wrap gap-2 pb-4 mb-6 border-b border-[#07543E]/10"
       >
         {[
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -569,7 +732,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTab(tab.id as AdminTab)}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-2 px-4 min-h-[44px] rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 active
                   ? 'bg-[#07543E] text-white'
                   : 'bg-[#FFFDF8] border border-[#07543E]/15 text-[#262820] hover:border-[#C5A04A]'
@@ -623,55 +786,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ==================================================================== */}
       {activeTab === 'overview' && (
         <div className="space-y-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
-              <p className="text-[11px] uppercase tracking-wider text-[#737746] font-semibold">
+          <div className="grid grid-cols-1 min-[380px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="p-4 sm:p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
+              <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                 Total RSVPs
               </p>
-              <p className="font-serif text-4xl font-semibold text-[#07543E] mt-1 tabular-nums">
+              <p className="font-serif text-3xl sm:text-4xl font-semibold text-[#07543E] mt-1 tabular-nums">
                 {rsvpMetrics.totalRsvps}
               </p>
-              <p className="text-xs text-[#262820]/65 mt-1">
+              <p className="text-xs text-[#262820]/70 mt-1">
                 {rsvpMetrics.attendingCount} attending · {rsvpMetrics.declinedCount} declined
               </p>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
-              <p className="text-[11px] uppercase tracking-wider text-[#737746] font-semibold">
+            <div className="p-4 sm:p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
+              <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                 Confirmed Guests
               </p>
-              <p className="font-serif text-4xl font-semibold text-[#07543E] mt-1 tabular-nums">
+              <p className="font-serif text-3xl sm:text-4xl font-semibold text-[#07543E] mt-1 tabular-nums">
                 {rsvpMetrics.totalConfirmedGuests}
               </p>
-              <p className="text-xs text-[#262820]/65 mt-1">Total headcount attending</p>
+              <p className="text-xs text-[#262820]/70 mt-1">Total headcount attending</p>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
-              <p className="text-[11px] uppercase tracking-wider text-[#737746] font-semibold">
-                Uploaded Photos &amp; Videos
+            <div className="p-4 sm:p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
+              <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
+                Uploaded Media
               </p>
-              <p className="font-serif text-4xl font-semibold text-[#07543E] mt-1 tabular-nums">
+              <p className="font-serif text-3xl sm:text-4xl font-semibold text-[#07543E] mt-1 tabular-nums">
                 {galleryMetrics.photos + galleryMetrics.videos}
               </p>
-              <p className="text-xs text-[#262820]/65 mt-1">
+              <p className="text-xs text-[#262820]/70 mt-1">
                 {galleryMetrics.photos} photos · {galleryMetrics.videos} videos
               </p>
             </div>
 
-            <div className="p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
-              <p className="text-[11px] uppercase tracking-wider text-[#737746] font-semibold">
+            <div className="p-4 sm:p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/12">
+              <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                 Pending Moderation
               </p>
-              <p className="font-serif text-4xl font-semibold text-[#C5A04A] mt-1 tabular-nums">
+              <p className="font-serif text-3xl sm:text-4xl font-semibold text-[#C5A04A] mt-1 tabular-nums">
                 {galleryMetrics.pending}
               </p>
-              <p className="text-xs text-[#262820]/65 mt-1">Awaiting couple approval</p>
+              <p className="text-xs text-[#262820]/70 mt-1">Awaiting couple approval</p>
             </div>
           </div>
 
           {/* Google Drive OAuth 2.0 Connection Panel */}
-          <div className="p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="p-5 sm:p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div className="flex items-start gap-3">
                 <HardDrive className="w-5 h-5 text-[#07543E] mt-0.5 shrink-0" />
                 <div>
@@ -679,7 +842,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Google Drive OAuth 2.0 Storage Connection
                   </h2>
                   {serverStatus && (
-                    <p className="text-xs text-[#262820]/70 mt-0.5">
+                    <p className="text-xs sm:text-sm text-[#262820]/70 mt-0.5">
                       Server Time: {serverStatus.serverTimeLagosFormatted} ({serverStatus.timezone})
                     </p>
                   )}
@@ -687,8 +850,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <span
-                className={`px-3 py-1 rounded-md text-xs font-semibold ${
+                className={`self-start px-3 py-1.5 rounded-md text-xs font-semibold ${
                   !driveStatus?.configuredFolderId
+                    ? 'bg-red-100 text-red-900'
+                    : driveStatus.lastError &&
+                      (driveStatus.lastError.toLowerCase().includes('revoked') ||
+                        driveStatus.lastError.toLowerCase().includes('expired'))
                     ? 'bg-red-100 text-red-900'
                     : hasBrowserDriveToken && driveStatus.oauthConnected
                     ? 'bg-[#07543E] text-white'
@@ -699,6 +866,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 {!driveStatus?.configuredFolderId
                   ? 'Missing GOOGLE_DRIVE_FOLDER_ID'
+                  : driveStatus.lastError &&
+                    (driveStatus.lastError.toLowerCase().includes('revoked') ||
+                      driveStatus.lastError.toLowerCase().includes('expired'))
+                  ? 'Reconnect Required'
                   : hasBrowserDriveToken && driveStatus.oauthConnected
                   ? 'Connected (Active OAuth Session)'
                   : driveStatus.serverRefreshConfigured
@@ -710,54 +881,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             {!driveStatus?.configuredFolderId && (
-              <div className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900 leading-relaxed">
+              <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 leading-relaxed">
                 <strong>Missing Configuration:</strong> <code className="font-mono">GOOGLE_DRIVE_FOLDER_ID</code> is not set in the server environment secrets. Configure the target Google Drive folder ID owned by <code className="font-mono">joepreserve@gmail.com</code> in Secrets and restart the server.
               </div>
             )}
 
-            {driveStatus?.lastError && (
-              <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <span>{driveStatus.lastError}</span>
+            {(driveStatus?.lastError || adminNeedsDriveReconnect) && (
+              <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs sm:text-sm text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5 leading-relaxed">
+                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <span>
+                    {driveStatus?.lastError ||
+                      'Your Google Drive OAuth session needs to be reconnected before uploading files.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleConnectGoogleDrive()}
+                  disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                  className="shrink-0 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                >
+                  <Link2 className="w-3.5 h-3.5 text-[#C5A04A]" />
+                  <span>Reconnect Google Drive</span>
+                </button>
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
-                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm">
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
+                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                   Connected Account
                 </p>
-                <p className="font-semibold text-[#07543E] mt-1 truncate">
+                <p className="font-semibold text-[#07543E] mt-1 break-all">
                   {driveStatus?.connectedEmail || 'Not authorized in this browser'}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
-                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
+                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                   Target Drive Folder
                 </p>
                 <p className="font-semibold text-[#07543E] mt-1 truncate">
                   {driveStatus?.folderName || 'Pending verification'}
                 </p>
-                <p className="font-mono text-[10px] text-[#262820]/60 truncate">
+                <p className="font-mono text-xs text-[#262820]/60 truncate">
                   {driveStatus?.folderIdPreview || '—'}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
-                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
+                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                   Folder Hierarchy
                 </p>
                 <p className="font-semibold text-[#07543E] mt-1">
                   {driveStatus?.subfoldersInitialized ? 'Initialized (Ready)' : 'Not initialized yet'}
                 </p>
-                <p className="text-[10px] text-[#262820]/60 truncate">
+                <p className="text-xs text-[#262820]/65 truncate">
                   Website · Guest Uploads · Admin Media
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12">
-                <p className="text-[10px] uppercase tracking-wider text-[#737746] font-semibold">
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
+                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
                   Last Upload
                 </p>
                 <p className="font-semibold text-[#07543E] mt-1">
@@ -772,12 +957,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 pt-1">
               <button
                 type="button"
                 onClick={() => void handleConnectGoogleDrive()}
                 disabled={driveActionBusy || !driveStatus?.configuredFolderId}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
               >
                 <Link2 className="w-3.5 h-3.5 text-[#C5A04A]" />
                 <span>
@@ -791,7 +976,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 type="button"
                 onClick={() => void handleInitDriveFolders()}
                 disabled={driveActionBusy || !driveStatus?.configuredFolderId}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
               >
                 <FolderTree className="w-3.5 h-3.5" />
                 <span>Initialize Folder Structure</span>
@@ -801,7 +986,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 type="button"
                 onClick={() => void handleTestDriveConnection()}
                 disabled={driveActionBusy || !driveStatus?.configuredFolderId}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${driveActionBusy ? 'animate-spin' : ''}`} />
                 <span>Test Connection</span>
@@ -812,7 +997,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   type="button"
                   onClick={() => void handleDisconnectGoogleDrive()}
                   disabled={driveActionBusy}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 bg-white hover:bg-red-50 disabled:opacity-50 text-red-700 text-xs font-semibold uppercase tracking-wider cursor-pointer ml-auto"
+                  className="w-full sm:w-auto sm:ml-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-red-200 bg-white hover:bg-red-50 disabled:opacity-50 text-red-700 text-xs font-semibold uppercase tracking-wider cursor-pointer"
                 >
                   <Unlink className="w-3.5 h-3.5" />
                   <span>Disconnect Google Drive</span>
@@ -1410,18 +1595,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2.5 flex-1">
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <div className="relative flex-1 min-w-[200px] w-full sm:max-w-sm">
                 <Search className="w-4 h-4 text-[#07543E]/55 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="search"
                   value={rsvpSearch}
                   onChange={(e) => setRsvpSearch(e.target.value)}
                   placeholder="Search guest name or note..."
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-white border border-[#07543E]/20"
+                  className="w-full pl-9 pr-3 py-2.5 min-h-[44px] text-base sm:text-sm rounded-lg bg-white border border-[#07543E]/20"
                 />
               </div>
 
-              <div className="inline-flex rounded-lg border border-[#07543E]/15 bg-[#FFFDF8] p-1">
+              <div className="flex flex-wrap rounded-lg border border-[#07543E]/15 bg-[#FFFDF8] p-1 w-full sm:w-auto">
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'attending', label: 'Attending' },
@@ -1431,7 +1616,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     key={f.id}
                     type="button"
                     onClick={() => setRsvpFilter(f.id as 'all' | 'attending' | 'declined')}
-                    className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${
+                    className={`px-3 min-h-[40px] flex-1 sm:flex-initial rounded-md text-xs font-semibold cursor-pointer ${
                       rsvpFilter === f.id
                         ? 'bg-[#07543E] text-white'
                         : 'text-[#262820]/70 hover:text-[#07543E]'
@@ -1447,7 +1632,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               type="button"
               onClick={() => exportRsvpsToCsv(filteredRsvps)}
               disabled={filteredRsvps.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
             >
               <Download className="w-4 h-4 text-[#C5A04A]" />
               <span>Export CSV</span>
@@ -1684,36 +1869,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <form
               onSubmit={handleAdminUploadSubmit}
-              className="lg:col-span-8 p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-4"
+              noValidate
+              className="lg:col-span-8 p-5 sm:p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-4"
             >
-              <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
                     Upload Official Photos or Videos to Google Drive
                   </h2>
-                  <p className="text-xs text-[#262820]/70 mt-0.5">
+                  <p className="text-xs sm:text-sm text-[#262820]/75 mt-1 leading-relaxed">
                     Admin uploads bypass the December 12 guest lock, save into the selected Google Drive subfolder, and publish immediately as approved.
                   </p>
                 </div>
-                {!hasBrowserDriveToken && !driveStatus?.serverRefreshConfigured && (
+                {(!hasBrowserDriveToken && !driveStatus?.serverRefreshConfigured) ||
+                adminNeedsDriveReconnect ? (
                   <button
                     type="button"
                     onClick={() => void handleConnectGoogleDrive()}
                     disabled={driveActionBusy}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C5A04A]/20 border border-[#C5A04A] text-[#07543E] text-xs font-semibold cursor-pointer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg bg-[#C5A04A]/25 border border-[#C5A04A] text-[#07543E] text-xs font-semibold cursor-pointer"
                   >
                     <Link2 className="w-3.5 h-3.5" />
-                    <span>Connect Google Drive First</span>
+                    <span>
+                      {adminNeedsDriveReconnect
+                        ? 'Reconnect Google Drive'
+                        : 'Connect Google Drive First'}
+                    </span>
                   </button>
-                )}
+                ) : null}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Upload Guidelines */}
+              <div className="p-3.5 rounded-lg bg-[#F2EBDD]/80 border border-[#C5A04A]/35 text-xs sm:text-sm text-[#262820]/85 space-y-1">
+                <p className="font-semibold text-[#07543E] flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-[#C5A04A] shrink-0" />
+                  <span>Upload Limits</span>
+                </p>
+                <p>
+                  Up to <strong>{adminLimits.maxBatchFiles} files</strong> per batch · Photos up to{' '}
+                  <strong>{Math.round(adminLimits.maxImageBytes / (1024 * 1024))} MB</strong> (JPG, PNG, WebP, GIF, HEIC) · Videos up to{' '}
+                  <strong>{Math.round(adminLimits.maxVideoBytes / (1024 * 1024))} MB</strong> (MP4, MOV, WebM, M4V)
+                </p>
+              </div>
+
+              {adminBatchSummaryNotice && (
+                <div
+                  role="status"
+                  className="p-3.5 rounded-lg bg-[#07543E]/8 border border-[#07543E]/25 text-xs sm:text-sm text-[#07543E] font-medium flex items-start gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{adminBatchSummaryNotice}</span>
+                </div>
+              )}
+
+              {(adminUploadError || adminValidationReport.hasErrors) && (
+                <div
+                  role="alert"
+                  className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 space-y-2 leading-relaxed"
+                >
+                  {adminUploadError && (
+                    <div className="flex items-start gap-2 font-medium">
+                      <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                      <span>{adminUploadError}</span>
+                    </div>
+                  )}
+                  {adminValidationReport.allErrors.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1">
+                      {adminValidationReport.allErrors.map((errMsg, idx) => (
+                        <li key={idx}>{errMsg}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <select
                   value={adminUploadCategory}
+                  disabled={adminUploading}
                   onChange={(e) => setAdminUploadCategory(e.target.value as DriveMediaCategory)}
                   aria-label="Target Google Drive subfolder"
-                  className="px-3.5 py-2.5 text-sm rounded-lg border border-[#07543E]/20 bg-white"
+                  className="px-3.5 py-2.5 min-h-[44px] text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-white"
                 >
                   <option value="admin_media">Admin Media</option>
                   <option value="website_homepage">Website Photos · Homepage</option>
@@ -1725,51 +1961,166 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <input
                   type="text"
+                  disabled={adminUploading}
                   value={adminUploadCaption}
                   onChange={(e) => setAdminUploadCaption(e.target.value)}
                   placeholder="Optional title / caption"
-                  className="px-3.5 py-2.5 text-sm rounded-lg border border-[#07543E]/20 bg-white"
-                />
-
-                <input
-                  ref={adminFileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  onChange={(e) => setAdminUploadFiles(Array.from(e.target.files || []))}
-                  className="text-xs file:mr-3 file:py-2 file:px-3.5 file:rounded-lg file:border-0 file:bg-[#07543E] file:text-white file:font-semibold file:cursor-pointer"
+                  className="px-3.5 py-2.5 min-h-[44px] text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-white"
                 />
               </div>
 
-              {adminUploading && (
-                <div className="w-full h-2 rounded-full bg-[#07543E]/15 overflow-hidden">
-                  <div
-                    className="h-full bg-[#07543E]"
-                    style={{ width: `${adminUploadProgress}%` }}
-                  />
+              <div>
+                <label
+                  htmlFor="admin-gallery-file-input"
+                  className={`flex flex-col items-center justify-center p-5 min-h-[104px] rounded-xl border border-dashed border-[#07543E]/35 bg-white hover:bg-[#FAF7F0] transition-colors text-center ${
+                    adminUploading ? 'opacity-60 pointer-events-none' : 'cursor-pointer'
+                  }`}
+                >
+                  <Upload className="w-5 h-5 text-[#07543E] mb-1.5" />
+                  <span className="text-sm font-semibold text-[#07543E]">
+                    {adminUploadEntries.length > 0
+                      ? 'Add More Photos or Videos'
+                      : `Choose Up to ${adminLimits.maxBatchFiles} Photos or Videos`}
+                  </span>
+                </label>
+                <input
+                  ref={adminFileInputRef}
+                  id="admin-gallery-file-input"
+                  type="file"
+                  multiple
+                  disabled={adminUploading}
+                  accept={FILE_INPUT_ACCEPT}
+                  onChange={handleAdminFileChange}
+                  className="sr-only"
+                />
+              </div>
+
+              {adminValidationReport.entries.length > 0 && (
+                <div className="rounded-xl border border-[#07543E]/15 bg-white overflow-hidden">
+                  <div className="px-4 py-2.5 bg-[#F2EBDD]/70 border-b border-[#07543E]/10 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+                    <span className="font-semibold text-[#07543E]">
+                      {adminValidationReport.entries.length}{' '}
+                      {adminValidationReport.entries.length === 1 ? 'file' : 'files'} selected · Total{' '}
+                      {formatFileSize(adminValidationReport.totalSizeBytes)}
+                    </span>
+                    {!adminUploading && (
+                      <button
+                        type="button"
+                        onClick={handleClearAdminFiles}
+                        className="inline-flex items-center gap-1 min-h-[36px] px-2 text-xs font-semibold text-red-700 hover:underline cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Clear All</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <ul className="divide-y divide-[#07543E]/10 max-h-64 overflow-y-auto">
+                    {adminValidationReport.entries.map((entry) => {
+                      const rowError = entry.validationError || entry.uploadError;
+                      return (
+                        <li
+                          key={entry.id}
+                          className={`px-4 py-2.5 flex items-start justify-between gap-3 ${
+                            rowError ? 'bg-red-50/60' : ''
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-[#262820] break-all">
+                                {entry.file.name}
+                              </span>
+                              <span className="text-xs px-2 py-0.5 rounded bg-[#F2EBDD] text-[#07543E] font-medium shrink-0">
+                                {entry.formatLabel} · {formatFileSize(entry.sizeBytes)}
+                              </span>
+                              {entry.uploadStatus === 'uploading' && (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#07543E]">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Uploading
+                                </span>
+                              )}
+                              {entry.uploadStatus === 'failed' && !entry.validationError && (
+                                <span className="text-xs font-semibold text-red-700">Failed</span>
+                              )}
+                            </div>
+                            {rowError && (
+                              <p className="text-xs text-red-800 leading-snug">{rowError}</p>
+                            )}
+                          </div>
+
+                          {!adminUploading && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAdminFile(entry.id)}
+                              aria-label={`Remove ${entry.file.name}`}
+                              className="w-11 h-11 -my-1.5 -mr-2 flex items-center justify-center rounded-lg text-[#262820]/60 hover:text-red-700 hover:bg-red-50 shrink-0 cursor-pointer"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={adminUploading || adminUploadFiles.length === 0}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
-              >
-                <Upload className="w-4 h-4 text-[#C5A04A]" />
-                <span>
-                  {adminUploading
-                    ? `Uploading (${adminUploadProgress}%)`
-                    : `Publish ${adminUploadFiles.length || ''} Selected`}
-                </span>
-              </button>
+              {adminUploading && (
+                <div className="space-y-1">
+                  <div className="w-full h-2.5 rounded-full bg-[#07543E]/15 overflow-hidden">
+                    <div
+                      className="h-full bg-[#07543E] transition-all duration-150"
+                      style={{ width: `${adminUploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-[#07543E] text-right tabular-nums">
+                    Uploading ({adminUploadProgress}%)
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                {adminFailedEntries.length > 0 && !adminUploading && (
+                  <button
+                    type="button"
+                    onClick={() => void handleAdminRetryFailedOnly()}
+                    disabled={adminValidationReport.hasErrors}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 min-h-[44px] rounded-lg bg-[#C5A04A] hover:bg-[#D4B05B] disabled:opacity-50 text-[#073B2B] text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Retry Failed Files Only ({adminFailedEntries.length})</span>
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={
+                    adminUploading ||
+                    adminValidationReport.entries.length === 0 ||
+                    adminValidationReport.hasErrors
+                  }
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                >
+                  {adminUploading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 text-[#C5A04A]" />
+                  )}
+                  <span>
+                    {adminUploading
+                      ? `Uploading (${adminUploadProgress}%)`
+                      : `Publish ${adminValidationReport.entries.length || ''} Selected`}
+                  </span>
+                </button>
+              </div>
             </form>
 
-            <div className="lg:col-span-4 p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 flex flex-col justify-between gap-4">
+            <div className="lg:col-span-4 p-5 sm:p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 flex flex-col justify-between gap-4">
               <div>
                 <h3 className="font-serif text-xl font-semibold text-[#07543E] mb-1">
                   Public Gallery Display
                 </h3>
-                <p className="text-xs text-[#262820]/70 leading-relaxed">
+                <p className="text-xs sm:text-sm text-[#262820]/75 leading-relaxed">
                   Control whether approved photos and videos are visible on the public website.
                 </p>
               </div>
@@ -1783,7 +2134,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setDraftContent(next);
                   void handleSaveSiteContent(next);
                 }}
-                className={`px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider cursor-pointer ${
+                className={`px-4 min-h-[44px] rounded-lg text-xs font-semibold uppercase tracking-wider cursor-pointer ${
                   draftContent.galleryPublicEnabled
                     ? 'bg-[#07543E] text-white'
                     : 'bg-stone-200 text-[#262820]'
@@ -1810,7 +2161,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() =>
                   setGalleryFilter(tab.id as 'all' | 'pending' | 'approved' | 'hidden')
                 }
-                className={`px-3.5 py-2 rounded-lg text-xs font-semibold cursor-pointer ${
+                className={`px-3.5 min-h-[44px] rounded-lg text-xs font-semibold cursor-pointer ${
                   galleryFilter === tab.id
                     ? 'bg-[#07543E] text-white'
                     : 'bg-[#FFFDF8] border border-[#07543E]/15 text-[#262820]'
@@ -1849,7 +2200,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         className="w-full h-full object-cover"
                       />
                     )}
-                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded bg-black/70 text-white font-mono text-[10px] uppercase">
+                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded bg-black/70 text-white font-mono text-xs uppercase">
                       {item.status}
                     </span>
                   </div>
@@ -1861,7 +2212,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           type="text"
                           value={editingMediaTitle}
                           onChange={(e) => setEditingMediaTitle(e.target.value)}
-                          className="flex-1 px-2.5 py-1.5 text-xs rounded border border-[#07543E]/25 bg-white"
+                          className="flex-1 px-2.5 py-2 min-h-[44px] text-base sm:text-xs rounded border border-[#07543E]/25 bg-white"
                         />
                         <button
                           type="button"
@@ -1870,7 +2221,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             setEditingMediaId(null);
                             await loadAllAdminData();
                           }}
-                          className="px-2.5 py-1.5 rounded bg-[#07543E] text-white text-xs font-semibold cursor-pointer"
+                          className="px-3 min-h-[44px] rounded bg-[#07543E] text-white text-xs font-semibold cursor-pointer"
                         >
                           Save
                         </button>
@@ -1894,9 +2245,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             await moderateGalleryItem(item, 'approved');
                             await loadAllAdminData();
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-[#07543E] text-white text-[11px] font-semibold cursor-pointer"
+                          className="inline-flex items-center gap-1 px-3 min-h-[40px] rounded bg-[#07543E] text-white text-xs font-semibold cursor-pointer"
                         >
-                          <Check className="w-3 h-3" /> Approve
+                          <Check className="w-3.5 h-3.5" /> Approve
                         </button>
                       )}
                       {item.status !== 'hidden' && (
@@ -1906,9 +2257,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             await moderateGalleryItem(item, 'hidden');
                             await loadAllAdminData();
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-[#07543E]/20 text-[11px] font-semibold text-[#262820] cursor-pointer"
+                          className="inline-flex items-center gap-1 px-3 min-h-[40px] rounded border border-[#07543E]/20 text-xs font-semibold text-[#262820] cursor-pointer"
                         >
-                          <EyeOff className="w-3 h-3" /> Hide
+                          <EyeOff className="w-3.5 h-3.5" /> Hide
                         </button>
                       )}
                       <button
@@ -1917,15 +2268,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setEditingMediaId(item.id);
                           setEditingMediaTitle(item.title);
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-[#07543E]/20 text-[11px] font-semibold text-[#07543E] cursor-pointer"
+                        className="inline-flex items-center gap-1 px-3 min-h-[40px] rounded border border-[#07543E]/20 text-xs font-semibold text-[#07543E] cursor-pointer"
                       >
-                        <Edit3 className="w-3 h-3" /> Title
+                        <Edit3 className="w-3.5 h-3.5" /> Title
                       </button>
                       <a
                         href={`${item.fileUrl}${item.fileUrl.includes('?') ? '&' : '?'}download=1`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-[#07543E]/20 text-[11px] font-semibold text-[#07543E]"
+                        className="inline-flex items-center gap-1 px-3 min-h-[40px] rounded border border-[#07543E]/20 text-xs font-semibold text-[#07543E]"
                       >
-                        <Download className="w-3 h-3" /> Save
+                        <Download className="w-3.5 h-3.5" /> Save
                       </a>
                       {confirmDeleteMediaId === item.id ? (
                         <button
@@ -1935,7 +2286,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             setConfirmDeleteMediaId(null);
                             await loadAllAdminData();
                           }}
-                          className="px-2.5 py-1.5 rounded bg-red-600 text-white text-[11px] font-semibold cursor-pointer"
+                          className="px-3 min-h-[40px] rounded bg-red-600 text-white text-xs font-semibold cursor-pointer"
                         >
                           Confirm Delete
                         </button>
@@ -1944,9 +2295,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           type="button"
                           onClick={() => setConfirmDeleteMediaId(item.id)}
                           aria-label={`Delete ${item.title}`}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer ml-auto"
+                          className="w-10 h-10 flex items-center justify-center text-red-600 hover:bg-red-50 rounded cursor-pointer ml-auto"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -2286,12 +2637,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {admins.length > 0 && (
               <ul className="divide-y divide-[#07543E]/10 rounded-lg border border-[#07543E]/12 bg-white">
                 {admins.map((a) => (
-                  <li key={a.uid} className="p-3.5 flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <p className="font-semibold text-[#07543E]">
+                  <li key={a.uid} className="p-3.5 flex items-center justify-between gap-3 text-xs sm:text-sm">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[#07543E] break-words">
                         {a.displayName || a.email}
                       </p>
-                      <p className="text-[#262820]/65 font-mono">
+                      <p className="text-[#262820]/65 font-mono text-xs break-all">
                         {a.email} · UID: {a.uid}
                       </p>
                     </div>
@@ -2301,7 +2652,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         await removeAdminUser(a.uid);
                         await loadAllAdminData();
                       }}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                      className="w-11 h-11 flex items-center justify-center text-red-600 hover:bg-red-50 rounded cursor-pointer shrink-0"
                       aria-label={`Remove admin ${a.email}`}
                     >
                       <Trash2 className="w-4 h-4" />
@@ -2317,21 +2668,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 value={newAdminUid}
                 onChange={(e) => setNewAdminUid(e.target.value)}
                 placeholder="Firebase User UID"
-                className="px-3 py-2 text-xs rounded-lg border border-[#07543E]/20 bg-white font-mono"
+                className="px-3 py-2.5 min-h-[44px] text-base sm:text-xs rounded-lg border border-[#07543E]/20 bg-white font-mono"
               />
               <input
                 type="email"
                 value={newAdminEmail}
                 onChange={(e) => setNewAdminEmail(e.target.value)}
                 placeholder="Email address"
-                className="px-3 py-2 text-xs rounded-lg border border-[#07543E]/20 bg-white"
+                className="px-3 py-2.5 min-h-[44px] text-base sm:text-xs rounded-lg border border-[#07543E]/20 bg-white"
               />
               <input
                 type="text"
                 value={newAdminName}
                 onChange={(e) => setNewAdminName(e.target.value)}
                 placeholder="Display name"
-                className="px-3 py-2 text-xs rounded-lg border border-[#07543E]/20 bg-white"
+                className="px-3 py-2.5 min-h-[44px] text-base sm:text-xs rounded-lg border border-[#07543E]/20 bg-white"
               />
               <button
                 type="button"
@@ -2358,7 +2709,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   }
                 }}
                 disabled={!newAdminUid.trim() || !newAdminEmail.trim()}
-                className="px-4 py-2 rounded-lg bg-[#07543E] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                className="px-4 min-h-[44px] rounded-lg bg-[#07543E] disabled:opacity-50 text-white text-xs font-semibold uppercase tracking-wider cursor-pointer"
               >
                 Add Co-Admin
               </button>

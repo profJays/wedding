@@ -20,7 +20,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   return (
     <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-8 animate-pop">
       {/* Stationery Outer Card */}
-      <div className="stationery-card rounded-2xl p-5 sm:p-9 text-center relative overflow-hidden border border-[#C5A04A]/40">
+      <div className="stationery-card rounded-2xl p-4 min-[380px]:p-5 sm:p-9 text-center relative overflow-hidden border border-[#C5A04A]/40">
         {/* Subtle decorative gold corner flourishes */}
         <div className="absolute top-3 left-3 w-5 h-5 border-t-2 border-l-2 border-[#C5A04A]/75 rounded-tl-xs pointer-events-none" />
         <div className="absolute top-3 right-3 w-5 h-5 border-t-2 border-r-2 border-[#C5A04A]/75 rounded-tr-xs pointer-events-none" />
@@ -35,44 +35,44 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           </div>
 
           {/* Kicker */}
-          <p className="font-mono text-[11px] font-semibold tracking-[0.2em] text-[#737746] mb-1">
+          <p className="font-mono text-xs font-semibold tracking-[0.16em] text-[#737746] mb-1">
             #mjay2026 · Wedding Guest Check-In
           </p>
 
           {/* Couple Names */}
-          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-[0.1em] text-[#07543E] uppercase mb-2">
+          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold tracking-[0.08em] text-[#07543E] uppercase mb-2">
             Mary &amp; Joseph
           </h1>
 
           {/* Subtitle / Challenge Hook */}
-          <div className="inline-flex items-center justify-center gap-2 mb-4">
-            <span className="h-[1px] w-6 sm:w-10 bg-[#C5A04A]/60" />
+          <div className="inline-flex items-center justify-center gap-2 mb-4 max-w-full">
+            <span className="h-[1px] w-5 sm:w-10 bg-[#C5A04A]/60 shrink-0" />
             <p className="font-sans text-xs sm:text-sm font-semibold text-[#737746] tracking-wider uppercase">
               Let's see if you're wedding-ready!
             </p>
-            <span className="h-[1px] w-6 sm:w-10 bg-[#C5A04A]/60" />
+            <span className="h-[1px] w-5 sm:w-10 bg-[#C5A04A]/60 shrink-0" />
           </div>
 
           {/* Unboxed Colors of the Day Metadata */}
-          <div className="mb-5 flex flex-wrap items-center justify-center gap-2 text-[11px] sm:text-xs text-[#262820]/75">
+          <div className="mb-5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs sm:text-sm text-[#262820]/80">
             <span className="uppercase tracking-wider font-semibold text-[#737746]">Palette:</span>
-            <span className="inline-flex items-center gap-1 text-[#07543E] font-semibold">
-              <span className="w-2 h-2 rounded-full bg-[#07543E] inline-block" />
+            <span className="inline-flex items-center gap-1.5 text-[#07543E] font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#07543E] inline-block" />
               Emerald
             </span>
             <span className="text-[#C5A04A]" aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-1 text-[#737746] font-semibold">
-              <span className="w-2 h-2 rounded-full bg-[#737746] inline-block" />
+            <span className="inline-flex items-center gap-1.5 text-[#737746] font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#737746] inline-block" />
               Olive
             </span>
             <span className="text-[#C5A04A]" aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-1 text-[#A47E22] font-semibold">
-              <span className="w-2 h-2 rounded-full bg-[#C5A04A] inline-block" />
+            <span className="inline-flex items-center gap-1.5 text-[#9A741B] font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#C5A04A] inline-block" />
               Gold
             </span>
           </div>
 
-          <p className="text-xs sm:text-sm text-[#262820]/75 leading-relaxed max-w-sm mx-auto mb-5 sm:mb-6">
+          <p className="text-sm sm:text-base text-[#262820]/80 leading-relaxed max-w-sm mx-auto mb-5 sm:mb-6">
             Before we unlock your official celebration pass, prove your wedding etiquette, enthusiasm, and dress code readiness!
           </p>
 
@@ -80,7 +80,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <div className="max-w-xs mx-auto mb-6 text-left">
             <label
               htmlFor="guestName"
-              className="block text-[11px] font-semibold tracking-wider uppercase text-[#07543E] mb-1.5"
+              className="block text-xs sm:text-sm font-semibold tracking-wider uppercase text-[#07543E] mb-1.5"
             >
               Guest Name (For your official pass)
             </label>
@@ -91,9 +91,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               value={guestName}
               onChange={(e) => onGuestNameChange(e.target.value)}
               maxLength={40}
-              className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[#07543E]/25 bg-white text-[#262820] placeholder-[#262820]/35 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15 transition-all shadow-2xs"
+              className="w-full px-3.5 py-3 text-base sm:text-sm rounded-lg border border-[#07543E]/25 bg-white text-[#262820] placeholder-[#262820]/40 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15 transition-all shadow-2xs min-h-[46px]"
             />
-            <p className="text-[10px] text-[#262820]/55 mt-1 italic text-center">
+            <p className="text-xs text-[#262820]/65 mt-1.5 italic text-center">
               Leave blank to proceed as "Honored Guest"
             </p>
           </div>
@@ -102,7 +102,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           <div className="relative flex flex-col items-center gap-3 mb-5">
             <button
               onClick={onStart}
-              className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 min-h-[48px] text-sm sm:text-base font-semibold tracking-wider uppercase text-white bg-[#07543E] hover:bg-[#073B2B] active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A04A] focus-visible:ring-offset-2 overflow-hidden cursor-pointer border border-[#C5A04A]/60"
+              className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 min-h-[50px] text-sm sm:text-base font-semibold tracking-wider uppercase text-white bg-[#07543E] hover:bg-[#073B2B] active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A04A] focus-visible:ring-offset-2 overflow-hidden cursor-pointer border border-[#C5A04A]/60"
             >
               <span className="absolute inset-0 w-1/2 h-full bg-white/15 skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
               <Sparkles className="w-4 h-4 text-[#F3E5AB] group-hover:rotate-12 transition-transform" />
@@ -114,26 +114,26 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <button
                 type="button"
                 onClick={onReturnToWebsite}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#07543E] hover:underline underline-offset-4 cursor-pointer"
+                className="inline-flex items-center gap-1.5 min-h-[44px] px-3 text-xs sm:text-sm font-medium text-[#07543E] hover:underline underline-offset-4 cursor-pointer"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
+                <ArrowLeft className="w-4 h-4" />
                 <span>Return to Wedding Website</span>
               </button>
             )}
           </div>
 
           {/* Quick Etiquette Highlights */}
-          <div className="pt-3.5 border-t border-[#07543E]/10 flex flex-wrap items-center justify-center gap-3 text-[11px] text-[#262820]/70">
+          <div className="pt-3.5 border-t border-[#07543E]/10 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-xs text-[#262820]/75">
             <span className="inline-flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-[#07543E]" />
               5 Quick Questions
             </span>
-            <span className="text-[#C5A04A]">·</span>
+            <span className="text-[#C5A04A]" aria-hidden="true">·</span>
             <span className="inline-flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-[#737746]" />
               1 Cardinal Wardrobe Rule
             </span>
-            <span className="text-[#C5A04A]">·</span>
+            <span className="text-[#C5A04A]" aria-hidden="true">·</span>
             <span className="inline-flex items-center gap-1">
               <HeartHandshake className="w-3.5 h-3.5 text-[#C5A04A]" />
               Verified Guest Pass

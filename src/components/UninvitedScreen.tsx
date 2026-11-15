@@ -19,7 +19,7 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
   return (
     <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-8 animate-dramatic-shake">
       {/* Alert Card Container */}
-      <div className="bg-[#FFF5F5] rounded-2xl p-5 sm:p-9 text-center relative overflow-hidden border-2 border-red-500 shadow-2xl">
+      <div className="bg-[#FFF5F5] rounded-2xl p-4 min-[380px]:p-5 sm:p-9 text-center relative overflow-hidden border-2 border-red-500 shadow-2xl">
         {/* Caution stripe decoration top & bottom */}
         <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-red-600 via-rose-500 to-red-600" />
         <div className="absolute bottom-0 inset-x-0 h-2 bg-gradient-to-r from-red-600 via-rose-500 to-red-600" />
@@ -30,8 +30,8 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
         </div>
 
         {/* ✕ WHITE DRESS Alert */}
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-red-600 text-white font-mono text-xs font-bold tracking-widest uppercase mb-3 shadow-xs">
-          <XCircle className="w-4 h-4" />
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red-600 text-white font-mono text-xs font-bold tracking-widest uppercase mb-3 shadow-xs">
+          <XCircle className="w-4 h-4 shrink-0" />
           <span>✕ WHITE DRESS DETECTED</span>
         </div>
 
@@ -47,24 +47,24 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
 
         {/* White at MY wedding? quote */}
         <div className="p-3.5 sm:p-4 rounded-xl bg-white/90 border border-red-200 mb-5 max-w-md mx-auto shadow-xs">
-          <p className="font-serif italic text-base sm:text-xl font-semibold text-red-950 mb-1">
+          <p className="font-serif italic text-lg sm:text-xl font-semibold text-red-950 mb-1">
             “White at MY wedding? Are you serious?”
           </p>
-          <p className="text-[11px] sm:text-xs text-red-800 font-medium">
+          <p className="text-xs sm:text-sm text-red-800 font-medium">
             — Mary &amp; Joseph (Aesthetic Enforcement Unit)
           </p>
         </div>
 
         {/* DRAMATIC STAMP: GUEST STATUS: REVOKED */}
         <div className="my-5 relative flex justify-center">
-          <div className="animate-stamp inline-block px-5 py-2 sm:px-6 sm:py-2.5 rounded-md border-3 sm:border-4 border-dashed border-red-700 text-red-700 font-mono font-black text-lg sm:text-2xl tracking-[0.16em] uppercase bg-red-50/95 shadow-md transform -rotate-6">
+          <div className="animate-stamp inline-block px-4 py-2 sm:px-6 sm:py-2.5 rounded-md border-3 sm:border-4 border-dashed border-red-700 text-red-700 font-mono font-black text-base min-[380px]:text-lg sm:text-2xl tracking-[0.12em] sm:tracking-[0.16em] uppercase bg-red-50/95 shadow-md transform -rotate-4 sm:-rotate-6 max-w-full">
             GUEST STATUS: REVOKED
           </div>
         </div>
 
         {/* Humorous description */}
-        <div className="max-w-md mx-auto mb-6 text-xs sm:text-sm text-red-900/80 leading-relaxed bg-red-100/60 p-3.5 rounded-lg border border-red-200">
-          <div className="flex items-start gap-2 text-left">
+        <div className="max-w-md mx-auto mb-6 text-sm text-red-900/85 leading-relaxed bg-red-100/60 p-3.5 sm:p-4 rounded-lg border border-red-200">
+          <div className="flex items-start gap-2.5 text-left">
             <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 shrink-0 mt-0.5" />
             <p>
               <strong className="text-red-950">{displayName}</strong>, the bridal squad, ushers, and Joseph's aunties
@@ -77,9 +77,9 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
         <div className="flex flex-col items-center gap-3">
           <button
             onClick={onTryAgain}
-            className="group inline-flex items-center justify-center gap-2.5 px-8 py-3.5 text-sm sm:text-base font-bold tracking-widest uppercase text-white bg-red-700 hover:bg-red-800 active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 cursor-pointer"
+            className="group w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 sm:px-8 py-3.5 min-h-[50px] text-sm sm:text-base font-bold tracking-wider uppercase text-white bg-red-700 hover:bg-red-800 active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 cursor-pointer"
           >
-            <RotateCcw className="w-5 h-5 group-hover:-rotate-90 transition-transform" />
+            <RotateCcw className="w-5 h-5 group-hover:-rotate-90 transition-transform shrink-0" />
             <span>TRY AGAIN (CHOOSE WISELY)</span>
           </button>
 
@@ -87,14 +87,14 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
             <button
               type="button"
               onClick={onReturnToWebsite}
-              className="text-xs font-medium text-red-900/75 hover:text-red-950 underline underline-offset-4 cursor-pointer"
+              className="min-h-[44px] px-3 inline-flex items-center text-xs sm:text-sm font-medium text-red-900/80 hover:text-red-950 underline underline-offset-4 cursor-pointer"
             >
               Return to Wedding Website
             </button>
           )}
         </div>
 
-        <p className="text-[11px] text-red-700/60 mt-4 italic">
+        <p className="text-xs text-red-700/70 mt-4 italic">
           Returns you safely to Question 5 for immediate redemption.
         </p>
       </div>

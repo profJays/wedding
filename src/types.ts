@@ -166,3 +166,59 @@ export interface GalleryServerStatus {
     maxBatchFiles: number;
   };
 }
+
+export type UploadErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'FILE_EMPTY'
+  | 'UNSUPPORTED_FORMAT'
+  | 'IMAGE_TOO_LARGE'
+  | 'VIDEO_TOO_LARGE'
+  | 'TOO_MANY_FILES'
+  | 'GALLERY_LOCKED'
+  | 'DRIVE_NOT_CONFIGURED'
+  | 'DRIVE_AUTH_MISSING'
+  | 'DRIVE_AUTH_EXPIRED'
+  | 'DRIVE_REFRESH_EXPIRED'
+  | 'DRIVE_PERMISSION_ERROR'
+  | 'DRIVE_API_ERROR'
+  | 'NETWORK_ERROR'
+  | 'SERVER_ERROR';
+
+export interface UploadedFileMetadata {
+  mediaType: 'image' | 'video';
+  mimeType: string;
+  fileUrl: string;
+  storageProvider: 'google_drive' | 'local_server';
+  driveFileId: string;
+  sizeBytes: number;
+  originalName: string;
+  category: DriveMediaCategory;
+  folderName: string;
+}
+
+export interface UploadFileResult {
+  clientFileId: string;
+  originalName: string;
+  status: 'uploaded' | 'failed' | 'rejected';
+  errorCode?: UploadErrorCode;
+  errorMessage?: string;
+  item?: UploadedFileMetadata;
+}
+
+export interface UploadBatchSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
+export interface UploadBatchResponse {
+  uploaded: UploadedFileMetadata[];
+  results: UploadFileResult[];
+  summary: UploadBatchSummary;
+  error?: string;
+  code?: UploadErrorCode;
+  needsDriveReconnect?: boolean;
+  serverTimeMs?: number;
+  isAdminUpload?: boolean;
+}
+

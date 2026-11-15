@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Calendar,
   MapPin,
@@ -88,7 +88,7 @@ const EditorialPhoto: React.FC<EditorialPhotoProps> = ({
           <p className="font-serif text-xl font-semibold text-[#07543E]">
             {coupleNames}
           </p>
-          <p className="text-xs text-[#262820]/65 mt-1">{alt}</p>
+          <p className="text-sm text-[#262820]/70 mt-1">{alt}</p>
         </div>
       ) : (
         <img
@@ -125,6 +125,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
     'cqa-2': true
   });
   const [openCalendarMenuId, setOpenCalendarMenuId] = useState<string | null>(null);
+  const calendarContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setCountdown(getCountdown(siteContent.ceremonyTargetISO));
@@ -133,6 +134,29 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [siteContent.ceremonyTargetISO]);
+
+  useEffect(() => {
+    if (!openCalendarMenuId) return;
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && !target.closest('[data-calendar-menu-root="true"]')) {
+        setOpenCalendarMenuId(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenCalendarMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openCalendarMenuId]);
 
   const filteredEvents = useMemo(() => {
     if (scheduleFilter === 'all') return siteContent.scheduleEvents;
@@ -200,23 +224,23 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
         />
 
         <div className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-8 pt-24 pb-12 sm:pb-16 text-center text-[#FAF7F0]">
-          <p className="font-sans text-xs sm:text-sm tracking-[0.24em] uppercase text-[#F3E5AB] mb-3">
+          <p className="font-sans text-xs sm:text-sm tracking-[0.18em] sm:tracking-[0.24em] uppercase text-[#F3E5AB] mb-3 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1">
             <span>{siteContent.weddingDateDisplay}</span>
-            <span className="mx-2.5 text-[#C5A04A]" aria-hidden="true">·</span>
+            <span className="text-[#C5A04A]" aria-hidden="true">·</span>
             <span>Abuja, Nigeria</span>
-            <span className="mx-2.5 text-[#C5A04A]" aria-hidden="true">·</span>
+            <span className="text-[#C5A04A]" aria-hidden="true">·</span>
             <span className="lowercase font-mono tracking-widest">{siteContent.hashtag}</span>
           </p>
 
-          <h1 className="font-serif text-5xl sm:text-7xl lg:text-8xl font-semibold tracking-wide text-white leading-[1.05] text-balance mb-4">
+          <h1 className="font-serif text-[42px] min-[375px]:text-5xl sm:text-7xl lg:text-8xl font-semibold tracking-wide text-white leading-[1.05] text-balance mb-4">
             {siteContent.brideName}{' '}
-            <span className="font-script text-[#E8CA6B] font-normal text-5xl sm:text-7xl lg:text-8xl">
+            <span className="font-script text-[#E8CA6B] font-normal text-[44px] min-[375px]:text-5xl sm:text-7xl lg:text-8xl">
               &amp;
             </span>{' '}
             {siteContent.groomName}
           </h1>
 
-          <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/90 max-w-2xl mx-auto mb-8">
+          <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/90 max-w-2xl mx-auto mb-8 break-words">
             {siteContent.mainVenue}
           </p>
 
@@ -229,7 +253,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           ) : (
             <div
               aria-label="Countdown to the wedding ceremony"
-              className="inline-grid grid-cols-4 gap-4 sm:gap-8 px-6 py-4 rounded-xl bg-[#073B2B]/75 backdrop-blur-md border border-[#C5A04A]/40 mb-8"
+              className="grid grid-cols-4 gap-2 sm:gap-7 px-3.5 sm:px-7 py-4 rounded-xl bg-[#073B2B]/75 backdrop-blur-md border border-[#C5A04A]/40 mb-8 w-full max-w-md mx-auto"
             >
               {[
                 { label: 'Days', value: countdown.days },
@@ -237,11 +261,11 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                 { label: 'Minutes', value: countdown.minutes },
                 { label: 'Seconds', value: countdown.seconds }
               ].map((unit) => (
-                <div key={unit.label} className="text-center min-w-[52px]">
+                <div key={unit.label} className="text-center min-w-0">
                   <div className="font-serif text-2xl sm:text-3xl font-semibold text-[#F3E5AB] tabular-nums leading-none">
                     {String(unit.value).padStart(2, '0')}
                   </div>
-                  <div className="mt-1.5 text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-[#FAF7F0]/80">
+                  <div className="mt-1.5 text-[11px] sm:text-xs uppercase tracking-[0.08em] sm:tracking-[0.16em] text-[#FAF7F0]/85 truncate">
                     {unit.label}
                   </div>
                 </div>
@@ -250,11 +274,11 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           )}
 
           {/* Hero Action Controls */}
-          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4 w-full max-w-sm sm:max-w-none mx-auto">
             <button
               type="button"
               onClick={() => scrollToSection('rsvp')}
-              className="inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[46px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.16em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[48px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.16em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
             >
               <span>RSVP Now</span>
             </button>
@@ -262,7 +286,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <button
               type="button"
               onClick={onGoChallenge}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[46px] rounded-xl bg-[#07543E]/85 hover:bg-[#07543E] text-white border border-[#C5A04A]/55 text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] backdrop-blur-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl bg-[#07543E]/85 hover:bg-[#07543E] text-white border border-[#C5A04A]/55 text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] backdrop-blur-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               <Sparkles className="w-4 h-4 text-[#F3E5AB]" />
               <span>
@@ -275,7 +299,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <button
               type="button"
               onClick={onGoInvitation}
-              className="inline-flex items-center justify-center gap-2 px-4 py-3.5 min-h-[46px] text-xs sm:text-sm font-medium tracking-[0.12em] uppercase text-[#F3E5AB] hover:text-white underline underline-offset-8 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[48px] text-xs sm:text-sm font-medium tracking-[0.12em] uppercase text-[#F3E5AB] hover:text-white underline underline-offset-8 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               <MailOpen className="w-4 h-4" />
               <span>Digital Invite</span>
@@ -296,17 +320,17 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <Crest size="md" />
           </div>
 
-          <p className="text-xs uppercase tracking-[0.24em] text-[#737746] font-semibold mb-3">
+          <p className="text-xs sm:text-sm uppercase tracking-[0.24em] text-[#737746] font-semibold mb-3">
             Welcome · {siteContent.hashtag}
           </p>
 
-          <h2 className="font-serif text-3xl sm:text-5xl font-semibold text-[#07543E] text-balance mb-8">
+          <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-8">
             {siteContent.welcomeHeading}
           </h2>
 
           <div className="h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent mb-8" />
 
-          <div className="space-y-6 text-left sm:text-center text-base sm:text-lg text-[#262820]/85 leading-relaxed sm:leading-loose font-serif">
+          <div className="space-y-6 text-left sm:text-center text-base sm:text-lg text-[#262820]/85 leading-[1.75] sm:leading-loose font-serif">
             {siteContent.welcomeParagraphs.map((para, idx) => (
               <p
                 key={idx}
@@ -338,10 +362,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       >
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl mb-10 sm:mb-14">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+            <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
               Our Story
             </p>
-            <h2 className="font-serif text-3xl sm:text-5xl font-semibold text-[#07543E] text-balance">
+            <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight">
               {siteContent.storyHeading}
             </h2>
           </div>
@@ -358,8 +382,8 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             </div>
 
             <div className="lg:col-span-7">
-              <div className="p-6 sm:p-10 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 space-y-6">
-                <div className="space-y-5 text-base sm:text-lg leading-relaxed sm:leading-loose text-[#262820]/85 font-serif max-w-prose">
+              <div className="p-5 min-[360px]:p-6 sm:p-10 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 space-y-6">
+                <div className="space-y-5 text-base sm:text-lg leading-[1.75] sm:leading-loose text-[#262820]/85 font-serif max-w-prose">
                   {siteContent.storyParagraphs.map((para, idx) => (
                     <p
                       key={idx}
@@ -382,14 +406,14 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <div className="pt-8 border-t border-[#07543E]/12">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#737746] font-semibold mb-1.5">
+                  <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-1.5">
                     Between the Two of Us
                   </p>
                   <h3 className="font-serif text-2xl sm:text-4xl font-semibold text-[#07543E]">
                     Couple Q&amp;A
                   </h3>
                 </div>
-                <p className="text-xs sm:text-sm text-[#262820]/65 font-serif italic">
+                <p className="text-sm sm:text-base text-[#262820]/70 font-serif italic">
                   A few light-hearted notes from {siteContent.coupleNames}
                 </p>
               </div>
@@ -408,10 +432,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                         onClick={() => toggleCoupleQa(qa.id)}
                         aria-expanded={isOpen}
                         aria-controls={panelId}
-                        className="w-full px-5 sm:px-6 py-4 sm:py-5 flex items-start justify-between gap-4 text-left cursor-pointer group"
+                        className="w-full min-h-[52px] px-5 sm:px-6 py-4 sm:py-5 flex items-start justify-between gap-4 text-left cursor-pointer group"
                       >
                         <div className="flex items-baseline gap-3">
-                          <span className="font-mono text-[11px] text-[#C5A04A] font-semibold shrink-0 tabular-nums">
+                          <span className="font-mono text-xs text-[#C5A04A] font-semibold shrink-0 tabular-nums">
                             {String(idx + 1).padStart(2, '0')}
                           </span>
                           <h4 className="font-serif text-lg sm:text-xl font-semibold text-[#07543E] group-hover:text-[#073B2B] leading-snug">
@@ -428,7 +452,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                       {isOpen && (
                         <div
                           id={panelId}
-                          className="px-5 sm:px-6 pb-5 pt-0 pl-12 text-sm sm:text-base text-[#262820]/85 leading-relaxed font-serif"
+                          className="px-5 sm:px-6 pb-5 pt-0 sm:pl-12 text-base sm:text-[17px] text-[#262820]/85 leading-relaxed font-serif"
                         >
                           {qa.answer}
                         </div>
@@ -452,13 +476,13 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10 sm:mb-12">
             <div className="max-w-2xl">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+              <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
                 Schedule of Events
               </p>
-              <h2 className="font-serif text-3xl sm:text-5xl font-semibold text-[#07543E] text-balance mb-3">
+              <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-3">
                 December 11 – 12, 2026
               </h2>
-              <p className="text-sm sm:text-base text-[#262820]/75">
+              <p className="text-base sm:text-lg text-[#262820]/80">
                 All event times are in West Africa Time (Africa/Lagos).
               </p>
             </div>
@@ -467,7 +491,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
               <div
                 role="tablist"
                 aria-label="Filter schedule by wedding day"
-                className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#F2EBDD] border border-[#07543E]/10"
+                className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-[#F2EBDD] border border-[#07543E]/10 w-full sm:w-auto"
               >
                 {[
                   { id: 'all', label: `All Events (${siteContent.scheduleEvents.length})` },
@@ -482,10 +506,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                       role="tab"
                       aria-selected={active}
                       onClick={() => setScheduleFilter(tab.id as 'all' | 'dec-11' | 'dec-12')}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      className={`px-3 min-h-[44px] flex-1 sm:flex-initial text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                         active
                           ? 'bg-[#07543E] text-white'
-                          : 'text-[#262820]/75 hover:text-[#07543E]'
+                          : 'text-[#262820]/80 hover:text-[#07543E]'
                       }`}
                     >
                       {tab.label}
@@ -497,9 +521,9 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
               <button
                 type="button"
                 onClick={onOpenDressCode}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#07543E] border border-[#C5A04A]/50 bg-[#FFFDF8] hover:bg-[#F2EBDD] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] text-xs sm:text-sm font-semibold text-[#07543E] border border-[#C5A04A]/50 bg-[#FFFDF8] hover:bg-[#F2EBDD] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <Palette className="w-3.5 h-3.5 text-[#C5A04A]" />
+                <Palette className="w-4 h-4 text-[#C5A04A]" />
                 <span>Attire Guide</span>
               </button>
             </div>
@@ -516,12 +540,12 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           </div>
 
           {/* Chronological Day Groups */}
-          <div className="space-y-12">
+          <div className="space-y-12" ref={calendarContainerRef}>
             {groupedSchedule.map((group) => (
               <div key={group.heading} className="space-y-5">
-                <div className="flex items-center gap-4 pb-3 border-b border-[#C5A04A]/35">
+                <div className="flex items-center gap-3 pb-3 border-b border-[#C5A04A]/35">
                   <Calendar className="w-4 h-4 text-[#C5A04A] shrink-0" />
-                  <h3 className="font-sans text-xs sm:text-sm font-bold tracking-[0.2em] uppercase text-[#07543E]">
+                  <h3 className="font-sans text-xs sm:text-sm font-bold tracking-[0.18em] sm:tracking-[0.2em] uppercase text-[#07543E]">
                     {group.heading}
                   </h3>
                 </div>
@@ -536,23 +560,23 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                     return (
                       <article
                         key={ev.id}
-                        className="p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start"
+                        className="p-5 min-[360px]:p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-start"
                       >
                         {/* Left Column: Time & Quick Attributes */}
                         <div className="lg:col-span-4 space-y-2.5">
-                          <div className="inline-flex items-center gap-2 text-sm font-mono font-semibold tabular-nums text-[#07543E]">
+                          <div className="inline-flex items-center gap-2 text-sm sm:text-base font-mono font-semibold tabular-nums text-[#07543E]">
                             <Clock className="w-4 h-4 text-[#C5A04A] shrink-0" />
                             <span>{ev.timeLabel}</span>
                           </div>
 
                           {ev.dressCode && (
-                            <p className="text-xs text-[#737746] font-medium">
+                            <p className="text-sm text-[#737746] font-medium">
                               Dress Code: <span className="text-[#262820]">{ev.dressCode}</span>
                             </p>
                           )}
 
                           {ev.coloursOfDay && (
-                            <p className="text-xs text-[#737746] font-medium">
+                            <p className="text-sm text-[#737746] font-medium">
                               Colours of the day:{' '}
                               <span className="text-[#262820]">{ev.coloursOfDay}</span>
                             </p>
@@ -560,18 +584,18 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                         </div>
 
                         {/* Right Column: Title, Description, Venue & Interactive Map / Calendar Actions */}
-                        <div className="lg:col-span-8 space-y-4">
-                          <h4 className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] leading-snug">
+                        <div className="lg:col-span-8 space-y-4 min-w-0">
+                          <h4 className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] leading-snug break-words">
                             {ev.title}
                           </h4>
 
-                          <p className="text-sm sm:text-base text-[#262820]/80 leading-relaxed whitespace-pre-line max-w-2xl">
+                          <p className="text-base sm:text-[17px] text-[#262820]/85 leading-relaxed whitespace-pre-line max-w-2xl break-words">
                             {ev.description}
                           </p>
 
-                          <div className="flex items-start gap-2.5 text-sm pt-1">
+                          <div className="flex items-start gap-2.5 text-sm sm:text-base pt-1">
                             <MapPin className="w-4 h-4 text-[#07543E] shrink-0 mt-1" />
-                            <p className="font-medium text-[#262820]">{ev.venueName}</p>
+                            <p className="font-medium text-[#262820] break-words">{ev.venueName}</p>
                           </div>
 
                           {/* Action Buttons: Map, Directions, Add to Calendar */}
@@ -580,7 +604,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                               href={mapUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#07543E]/20 bg-white hover:bg-[#FAF7F0] text-xs font-semibold text-[#07543E] transition-colors"
+                              className="inline-flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-lg border border-[#07543E]/20 bg-white hover:bg-[#FAF7F0] text-xs sm:text-sm font-semibold text-[#07543E] transition-colors"
                             >
                               <MapPin className="w-3.5 h-3.5 text-[#C5A04A]" />
                               <span>Map</span>
@@ -591,20 +615,21 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                               href={directionsUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#07543E]/20 bg-white hover:bg-[#FAF7F0] text-xs font-semibold text-[#07543E] transition-colors"
+                              className="inline-flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-lg border border-[#07543E]/20 bg-white hover:bg-[#FAF7F0] text-xs sm:text-sm font-semibold text-[#07543E] transition-colors"
                             >
                               <Navigation className="w-3.5 h-3.5 text-[#737746]" />
                               <span>Directions</span>
                             </a>
 
-                            <div className="relative">
+                            <div className="relative" data-calendar-menu-root="true">
                               <button
                                 type="button"
                                 onClick={() =>
                                   setOpenCalendarMenuId(isCalMenuOpen ? null : ev.id)
                                 }
                                 aria-expanded={isCalMenuOpen}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#07543E] hover:bg-[#073B2B] text-white text-xs font-semibold transition-colors cursor-pointer"
+                                aria-haspopup="menu"
+                                className="inline-flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
                               >
                                 <Calendar className="w-3.5 h-3.5 text-[#F3E5AB]" />
                                 <span>Add to Calendar</span>
@@ -612,27 +637,32 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                               </button>
 
                               {isCalMenuOpen && (
-                                <div className="absolute left-0 mt-1.5 w-48 rounded-lg bg-white border border-[#07543E]/15 shadow-lg z-20 py-1 text-xs">
+                                <div
+                                  role="menu"
+                                  className="absolute left-0 mt-1.5 w-52 max-w-[calc(100vw-2.5rem)] rounded-lg bg-white border border-[#07543E]/15 shadow-lg z-20 py-1 text-sm"
+                                >
                                   <a
+                                    role="menuitem"
                                     href={gcalUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={() => setOpenCalendarMenuId(null)}
-                                    className="flex items-center justify-between px-3.5 py-2.5 text-[#262820] hover:bg-[#FAF7F0] font-medium"
+                                    className="flex items-center justify-between px-3.5 min-h-[44px] text-[#262820] hover:bg-[#FAF7F0] font-medium"
                                   >
                                     <span>Google Calendar</span>
-                                    <ExternalLink className="w-3 h-3 text-[#07543E]" />
+                                    <ExternalLink className="w-3.5 h-3.5 text-[#07543E]" />
                                   </a>
                                   <button
+                                    role="menuitem"
                                     type="button"
                                     onClick={() => {
                                       downloadIcsFile(ev, siteContent.coupleNames);
                                       setOpenCalendarMenuId(null);
                                     }}
-                                    className="w-full flex items-center justify-between px-3.5 py-2.5 text-[#262820] hover:bg-[#FAF7F0] font-medium text-left cursor-pointer"
+                                    className="w-full flex items-center justify-between px-3.5 min-h-[44px] text-[#262820] hover:bg-[#FAF7F0] font-medium text-left cursor-pointer"
                                   >
                                     <span>Apple / Outlook (.ics)</span>
-                                    <Download className="w-3 h-3 text-[#07543E]" />
+                                    <Download className="w-3.5 h-3.5 text-[#07543E]" />
                                   </button>
                                 </div>
                               )}
@@ -660,13 +690,13 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
             {/* Left Column: Heading, Intro & Natural Portrait */}
             <div className="lg:col-span-5 lg:sticky lg:top-24">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+              <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
                 Q &amp; A
               </p>
-              <h2 className="font-serif text-3xl sm:text-5xl font-semibold text-[#07543E] text-balance mb-4">
+              <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-4">
                 Guest Information
               </h2>
-              <p className="text-sm sm:text-base text-[#262820]/80 leading-relaxed mb-6">
+              <p className="text-base sm:text-lg text-[#262820]/80 leading-relaxed mb-6">
                 {AUTHORITATIVE_QA_INTRO}
               </p>
 
@@ -688,19 +718,19 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                   onChange={(e) => setFaqQuery(e.target.value)}
                   placeholder="Search questions (e.g. arrive, dress code, photos, venues)..."
                   aria-label="Search guest questions"
-                  className="w-full pl-10 pr-4 py-3 text-sm rounded-xl bg-[#FAF7F0] border border-[#07543E]/20 text-[#262820] placeholder-[#262820]/45 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15"
+                  className="w-full pl-10 pr-4 py-3 min-h-[48px] text-base sm:text-sm rounded-xl bg-[#FAF7F0] border border-[#07543E]/20 text-[#262820] placeholder-[#262820]/45 focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15"
                 />
               </div>
 
               {filteredFaqs.length === 0 ? (
                 <div className="p-8 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 text-center">
-                  <p className="text-sm text-[#262820]/70 mb-2">
-                    No questions matched "{faqQuery}".
+                  <p className="text-base text-[#262820]/75 mb-2">
+                    No questions matched &ldquo;{faqQuery}&rdquo;.
                   </p>
                   <button
                     type="button"
                     onClick={() => setFaqQuery('')}
-                    className="text-xs font-semibold text-[#07543E] underline underline-offset-4 cursor-pointer"
+                    className="min-h-[44px] inline-flex items-center text-sm font-semibold text-[#07543E] underline underline-offset-4 cursor-pointer"
                   >
                     Clear search
                   </button>
@@ -717,7 +747,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                           onClick={() => toggleFaq(faq.id)}
                           aria-expanded={isOpen}
                           aria-controls={panelId}
-                          className="w-full flex items-center justify-between gap-4 text-left cursor-pointer group"
+                          className="w-full min-h-[48px] flex items-center justify-between gap-4 text-left cursor-pointer group"
                         >
                           <div className="flex items-baseline gap-3">
                             <span className="font-mono text-xs text-[#C5A04A] font-semibold shrink-0 tabular-nums">
@@ -737,7 +767,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                         {isOpen && (
                           <div
                             id={panelId}
-                            className="mt-3 pl-7 text-sm sm:text-base text-[#262820]/80 leading-relaxed whitespace-pre-line"
+                            className="mt-3 pl-0 sm:pl-9 text-base sm:text-[17px] text-[#262820]/85 leading-relaxed whitespace-pre-line break-words"
                           >
                             {faq.answer}
                           </div>
@@ -776,23 +806,23 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[#073B2B] text-[#FAF7F0]">
         <div className="max-w-4xl mx-auto text-center">
-          <p className="text-xs uppercase tracking-[0.24em] text-[#F3E5AB] font-semibold mb-3">
+          <p className="text-xs sm:text-sm uppercase tracking-[0.24em] text-[#F3E5AB] font-semibold mb-3">
             {siteContent.hashtag} · Guest Experience
           </p>
 
-          <h2 className="font-serif text-3xl sm:text-5xl font-semibold text-white text-balance mb-4">
+          <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-white text-balance leading-tight mb-4">
             Unseal Our Digital Invitation
           </h2>
 
-          <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/85 max-w-2xl mx-auto mb-8">
+          <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/85 max-w-2xl mx-auto mb-8 leading-relaxed">
             Open our emerald &amp; gold wax-sealed digital invitation and take our playful 5-question Wedding Challenge to claim your official {siteContent.hashtag} guest pass.
           </p>
 
-          <div className="flex flex-wrap items-center justify-center gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3.5 sm:gap-4 max-w-sm sm:max-w-none mx-auto">
             <button
               type="button"
               onClick={onGoInvitation}
-              className="inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[48px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.14em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[48px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.14em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
             >
               <MailOpen className="w-4 h-4" />
               <span>Open Digital Invitation</span>
@@ -801,7 +831,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <button
               type="button"
               onClick={onGoChallenge}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl border border-[#F3E5AB]/50 hover:bg-white/10 text-white text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl border border-[#F3E5AB]/50 hover:bg-white/10 text-white text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               <Heart className="w-4 h-4 text-[#F3E5AB]" />
               <span>Play Wedding Challenge</span>
