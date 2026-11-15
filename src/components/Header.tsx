@@ -5,6 +5,7 @@ import { AppView } from '../types';
 interface HeaderProps {
   coupleNames: string;
   activeView: AppView;
+  puzzleEnabled?: boolean;
   onNavigateSection: (sectionId: string) => void;
   onGoInvitation: () => void;
   onGoChallenge: () => void;
@@ -13,11 +14,22 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   coupleNames,
   activeView,
+  puzzleEnabled = true,
   onNavigateSection,
   onGoInvitation,
   onGoChallenge
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const navItems = [
+    { id: 'welcome', label: 'Welcome' },
+    { id: 'story', label: 'Our Story' },
+    { id: 'schedule', label: 'Schedule' },
+    ...(puzzleEnabled ? [{ id: 'puzzle', label: 'Puzzle' }] : []),
+    { id: 'faq', label: 'Q&A' },
+    { id: 'rsvp', label: 'RSVP' },
+    { id: 'gallery', label: 'Gallery' }
+  ];
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -50,16 +62,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 2: Clean typographic navigation links */}
         <nav
           aria-label="Primary Navigation"
-          className="hidden lg:flex items-center gap-6 text-xs lg:text-[13px] font-medium tracking-[0.14em] uppercase text-[#262820]/80"
+          className="hidden lg:flex items-center gap-5 text-xs lg:text-[13px] font-medium tracking-[0.14em] uppercase text-[#262820]/80"
         >
-          {[
-            { id: 'welcome', label: 'Welcome' },
-            { id: 'story', label: 'Our Story' },
-            { id: 'schedule', label: 'Schedule' },
-            { id: 'faq', label: 'Q&A' },
-            { id: 'rsvp', label: 'RSVP' },
-            { id: 'gallery', label: 'Gallery' }
-          ].map((item) => (
+          {navItems.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -103,14 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label="Mobile Navigation"
             className="grid grid-cols-2 gap-2 text-sm font-medium uppercase tracking-wider text-[#262820]"
           >
-            {[
-              { id: 'welcome', label: 'Welcome' },
-              { id: 'story', label: 'Our Story' },
-              { id: 'schedule', label: 'Schedule' },
-              { id: 'faq', label: 'Q&A' },
-              { id: 'rsvp', label: 'RSVP' },
-              { id: 'gallery', label: 'Gallery' }
-            ].map((item) => (
+            {navItems.map((item) => (
               <button
                 key={item.id}
                 type="button"

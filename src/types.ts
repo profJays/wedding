@@ -78,6 +78,9 @@ export interface SiteContentData {
   themePrimaryHex: string;
   themeAccentHex: string;
   themeGoldHex: string;
+  puzzleEnabled?: boolean;
+  puzzleImageFileId?: string;
+  puzzleImageUrl?: string;
   updatedAt?: string;
   updatedByUid?: string;
 }
@@ -252,4 +255,34 @@ export interface UploadBatchResponse {
   serverTimeMs?: number;
   isAdminUpload?: boolean;
 }
+
+export interface ResumableInitRequest {
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  category?: DriveMediaCategory;
+  clientFileId?: string;
+}
+
+export interface ResumableInitResponse {
+  sessionId: string;
+  driveUploadUri: string;
+  chunkBytes: number;
+  mediaType: 'image' | 'video';
+  mimeType: string;
+  category: DriveMediaCategory;
+  folderName: string;
+  isAdminUpload: boolean;
+}
+
+export interface ResumableCompleteRequest {
+  sessionId: string;
+  driveFileId?: string;
+}
+
+export interface ResumableCompleteResponse {
+  item: UploadedFileMetadata;
+  isAdminUpload: boolean;
+}
+
 

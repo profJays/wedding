@@ -88,6 +88,9 @@ service cloud.firestore {
         'themePrimaryHex',
         'themeAccentHex',
         'themeGoldHex',
+        'puzzleEnabled',
+        'puzzleImageFileId',
+        'puzzleImageUrl',
         'updatedAt',
         'updatedByUid'
       ])
@@ -118,6 +121,9 @@ service cloud.firestore {
       && (!('themePrimaryHex' in data) || (data.themePrimaryHex is string && data.themePrimaryHex.size() <= 20))
       && (!('themeAccentHex' in data) || (data.themeAccentHex is string && data.themeAccentHex.size() <= 20))
       && (!('themeGoldHex' in data) || (data.themeGoldHex is string && data.themeGoldHex.size() <= 20))
+      && (!('puzzleEnabled' in data) || data.puzzleEnabled is bool)
+      && (!('puzzleImageFileId' in data) || (data.puzzleImageFileId is string && data.puzzleImageFileId.size() <= 200))
+      && (!('puzzleImageUrl' in data) || (data.puzzleImageUrl is string && data.puzzleImageUrl.size() <= 500))
       && data.updatedAt is timestamp
       && data.updatedByUid is string && data.updatedByUid == request.auth.uid;
     }

@@ -6,6 +6,7 @@ interface FooterProps {
   hashtag: string;
   weddingDateDisplay: string;
   footerNote: string;
+  puzzleEnabled?: boolean;
   onNavigateSection?: (sectionId: string) => void;
   onGoInvitation?: () => void;
   onGoChallenge?: () => void;
@@ -17,6 +18,7 @@ export const Footer: React.FC<FooterProps> = ({
   hashtag,
   weddingDateDisplay,
   footerNote,
+  puzzleEnabled = true,
   onNavigateSection,
   onGoInvitation,
   onGoChallenge,
@@ -48,6 +50,11 @@ export const Footer: React.FC<FooterProps> = ({
             <button type="button" onClick={() => onNavigateSection('schedule')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
               Schedule
             </button>
+            {puzzleEnabled && (
+              <button type="button" onClick={() => onNavigateSection('puzzle')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                Photo Puzzle
+              </button>
+            )}
             <button type="button" onClick={() => onNavigateSection('faq')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
               Q&amp;A
             </button>

@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import {
@@ -14,6 +16,10 @@ import {
   testServerRefreshTokenConnection,
   disconnectDriveState,
   storeGalleryFileInDrive,
+  initiateDriveResumableSession,
+  relayResumableChunkToDrive,
+  completeDriveResumableSession,
+  abortDriveResumableSession,
   resolveLocalMediaPath,
   deleteStoredGalleryFile,
   fetchDriveMediaStream
@@ -24,6 +30,10 @@ import {
 } from './server/firebaseTokenVerifier.ts';
 import type {
   DriveMediaCategory,
+  ResumableCompleteRequest,
+  ResumableCompleteResponse,
+  ResumableInitRequest,
+  ResumableInitResponse,
   UploadBatchResponse,
   UploadErrorCode,
   UploadFileResult,
@@ -74,12 +84,15 @@ const EXTENSION_TO_VIDEO_MIME: Record<string, string> = {
   '.m4v': 'video/x-m4v'
 };
 
-function classifyUploadedFile(file: Express.Multer.File): {
+function classifyMediaDescriptor(
+  originalName: string,
+  mimeType: string
+): {
   mediaType: 'image' | 'video' | 'unsupported';
   canonicalMime: string;
 } {
-  const mime = (file.mimetype || '').toLowerCase().trim();
-  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mime = (mimeType || '').toLowerCase().trim();
+  const ext = path.extname(originalName || '').toLowerCase();
 
   if (ALLOWED_IMAGE_MIMES.has(mime)) {
     return { mediaType: 'image', canonicalMime: mime === 'image/jpg' ? 'image/jpeg' : mime };
@@ -94,6 +107,13 @@ function classifyUploadedFile(file: Express.Multer.File): {
     return { mediaType: 'video', canonicalMime: EXTENSION_TO_VIDEO_MIME[ext] };
   }
   return { mediaType: 'unsupported', canonicalMime: mime || 'application/octet-stream' };
+}
+
+function classifyUploadedFile(file: Express.Multer.File): {
+  mediaType: 'image' | 'video' | 'unsupported';
+  canonicalMime: string;
+} {
+  return classifyMediaDescriptor(file.originalname || '', file.mimetype || '');
 }
 
 function parseClientFileIds(raw: unknown, count: number): string[] {
@@ -687,6 +707,265 @@ async function startServer() {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Google Drive Resumable Uploads (Bypasses 32 MiB proxy limits for 60-100 MB videos)
+  // -------------------------------------------------------------------------
+  async function checkOptionalAdminUpload(req: express.Request): Promise<boolean> {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) return false;
+    const rawToken = authHeader.slice('Bearer '.length).trim();
+    const tokenInfo = await verifyFirebaseIdToken(rawToken, firebaseCfg.projectId);
+    if (!tokenInfo) return false;
+    return isAuthorizedWeddingAdmin(
+      tokenInfo,
+      firebaseCfg.projectId,
+      firebaseCfg.firestoreDatabaseId,
+      rawToken
+    );
+  }
+
+  app.post('/api/gallery/upload/resumable/init', async (req, res) => {
+    try {
+      const nowMs = Date.now();
+      const { unlockISO, unlockEpochMs } = await resolveGalleryUnlockFromFirestore(firebaseCfg);
+      const isAdminUpload = await checkOptionalAdminUpload(req);
+
+      if (!isAdminUpload && nowMs < unlockEpochMs) {
+        res.status(403).json({
+          error:
+            'Gallery uploads are locked until Saturday, 12 December 2026 at 00:00 WAT (Africa/Lagos).',
+          code: 'GALLERY_LOCKED',
+          serverTimeMs: nowMs,
+          unlockAtISO: unlockISO,
+          unlockAtEpochMs: unlockEpochMs
+        });
+        return;
+      }
+
+      const body = (req.body || {}) as Partial<ResumableInitRequest>;
+      const originalName = String(body.originalName || '').trim();
+      const sizeBytes = Number(body.sizeBytes);
+      const rawMime = String(body.mimeType || '').trim();
+      const rawCategory = String(body.category || '').trim() as DriveMediaCategory;
+
+      if (!originalName || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+        res.status(400).json({
+          error: `${originalName || 'Selected file'} appears to be empty or invalid (0 bytes).`,
+          code: 'FILE_EMPTY'
+        });
+        return;
+      }
+
+      const classified = classifyMediaDescriptor(originalName, rawMime);
+      if (classified.mediaType === 'unsupported') {
+        res.status(400).json({
+          error: `We couldn't upload ${originalName} because this file format is not supported.`,
+          code: 'UNSUPPORTED_FORMAT'
+        });
+        return;
+      }
+
+      if (classified.mediaType === 'image' && sizeBytes > MAX_IMAGE_BYTES) {
+        const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+        res.status(400).json({
+          error: `${originalName} is ${sizeMb} MB. The maximum photo size is 15 MB. Please compress this image or choose a smaller version.`,
+          code: 'IMAGE_TOO_LARGE'
+        });
+        return;
+      }
+
+      if (classified.mediaType === 'video' && sizeBytes > MAX_VIDEO_BYTES) {
+        const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+        res.status(400).json({
+          error: `${originalName} is ${sizeMb} MB. The maximum video size is 100 MB. Please compress the video or select a smaller version.`,
+          code: 'VIDEO_TOO_LARGE'
+        });
+        return;
+      }
+
+      const category: DriveMediaCategory =
+        isAdminUpload && VALID_CATEGORIES.has(rawCategory)
+          ? rawCategory
+          : isAdminUpload
+          ? 'admin_media'
+          : classified.mediaType === 'image'
+          ? 'guest_photo'
+          : 'guest_video';
+
+      const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
+      const reqOrigin =
+        req.get('origin') ||
+        (req.get('host') ? `${req.protocol}://${req.get('host')}` : undefined);
+
+      const session = await initiateDriveResumableSession({
+        originalName,
+        mimeType: classified.canonicalMime,
+        sizeBytes: Math.trunc(sizeBytes),
+        category,
+        mediaType: classified.mediaType,
+        origin: reqOrigin,
+        driveAccessTokenHeader: isAdminUpload ? driveTokenHeader : undefined,
+        isAdminUpload
+      });
+
+      const response: ResumableInitResponse = {
+        sessionId: session.sessionId,
+        driveUploadUri: session.driveUploadUri,
+        chunkBytes: session.chunkBytes,
+        mediaType: classified.mediaType,
+        mimeType: classified.canonicalMime,
+        category,
+        folderName: session.folderName,
+        isAdminUpload
+      };
+      res.json(response);
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({
+          error: err.message,
+          code: err.code
+        });
+        return;
+      }
+      res.status(500).json({
+        error: 'Unable to prepare resumable upload session. Please try again shortly.',
+        code: 'SERVER_ERROR'
+      });
+    }
+  });
+
+  // Optional 8 MiB chunk relay fallback if browser CORS blocks direct PUT to Google Drive session URI
+  app.put(
+    '/api/gallery/upload/resumable/chunk/:sessionId',
+    express.raw({ type: '*/*', limit: '16mb' }),
+    async (req, res) => {
+      try {
+        const sessionId = String(req.params.sessionId || '').trim();
+        const contentRange = String(req.header('content-range') || '').trim();
+        const chunkBuffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+
+        if (!sessionId || !contentRange) {
+          res.status(400).json({
+            error: 'Missing resumable session ID or Content-Range header.',
+            code: 'VALIDATION_ERROR'
+          });
+          return;
+        }
+
+        const relayResult = await relayResumableChunkToDrive({
+          sessionId,
+          chunk: chunkBuffer,
+          contentRange,
+          contentType: req.header('content-type') || undefined
+        });
+
+        if (relayResult.rangeHeader) {
+          res.setHeader('Range', relayResult.rangeHeader);
+          res.setHeader('X-Drive-Range', relayResult.rangeHeader);
+        }
+
+        if (relayResult.status === 308) {
+          res.status(200).json({
+            incomplete: true,
+            status: 308,
+            range: relayResult.rangeHeader
+          });
+          return;
+        }
+
+        if (relayResult.status >= 200 && relayResult.status < 300) {
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(relayResult.bodyText || '{}') as Record<string, unknown>;
+          } catch {
+            parsed = {};
+          }
+          res.status(relayResult.status).json({
+            incomplete: false,
+            status: relayResult.status,
+            ...parsed
+          });
+          return;
+        }
+
+        res.status(relayResult.status || 502).json({
+          error: 'Google Drive rejected an upload chunk. Please retry.',
+          code: 'DRIVE_API_ERROR',
+          upstreamStatus: relayResult.status
+        });
+      } catch (err) {
+        if (err instanceof DriveStorageError) {
+          res.status(err.statusCode).json({ error: err.message, code: err.code });
+          return;
+        }
+        res.status(500).json({
+          error: 'Chunk upload relay failed. Please retry.',
+          code: 'SERVER_ERROR'
+        });
+      }
+    }
+  );
+
+  app.post('/api/gallery/upload/resumable/complete', async (req, res) => {
+    try {
+      const body = (req.body || {}) as Partial<ResumableCompleteRequest>;
+      const sessionId = String(body.sessionId || '').trim();
+      if (!sessionId) {
+        res.status(400).json({
+          error: 'Missing resumable upload sessionId.',
+          code: 'VALIDATION_ERROR'
+        });
+        return;
+      }
+
+      const isAdminUpload = await checkOptionalAdminUpload(req);
+      const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
+
+      const stored = await completeDriveResumableSession({
+        sessionId,
+        driveFileIdHint: body.driveFileId,
+        driveAccessTokenHeader: isAdminUpload ? driveTokenHeader : undefined,
+        isAdminUpload
+      });
+
+      const classified = classifyMediaDescriptor(stored.originalName, stored.mimeType);
+      const item: UploadedFileMetadata = {
+        mediaType: classified.mediaType === 'video' ? 'video' : 'image',
+        mimeType: stored.mimeType,
+        fileUrl: stored.fileUrl,
+        storageProvider: stored.storageProvider,
+        driveFileId: stored.driveFileId,
+        sizeBytes: stored.sizeBytes,
+        originalName: stored.originalName,
+        category: stored.category,
+        folderName: stored.folderName
+      };
+
+      const payload: ResumableCompleteResponse = {
+        item,
+        isAdminUpload
+      };
+      res.status(201).json(payload);
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(500).json({
+        error: 'Unable to finalize Google Drive upload. Please retry.',
+        code: 'SERVER_ERROR'
+      });
+    }
+  });
+
+  app.delete('/api/gallery/upload/resumable/:sessionId', async (req, res) => {
+    const sessionId = String(req.params.sessionId || '').trim();
+    if (sessionId) {
+      await abortDriveResumableSession(sessionId);
+    }
+    res.json({ aborted: true });
+  });
+
   // Serve legacy local media cleanly if any exist
   app.get('/api/gallery/media/:fileId', (req, res) => {
     const filePath = resolveLocalMediaPath(req.params.fileId);
@@ -701,7 +980,7 @@ async function startServer() {
     res.sendFile(filePath);
   });
 
-  // Proxy Google Drive uploaded media cleanly without exposing tokens
+  // Proxy Google Drive uploaded media cleanly without exposing tokens (with streaming + HTTP Range support for large videos)
   app.get('/api/gallery/drive/:driveFileId', async (req, res) => {
     const driveId = req.params.driveFileId.replace(/[^a-zA-Z0-9_\-]/g, '');
     if (!driveId) {
@@ -710,19 +989,43 @@ async function startServer() {
     }
     try {
       const optionalToken = req.header('X-Google-Drive-Token') || undefined;
-      const upstream = await fetchDriveMediaStream(driveId, optionalToken);
-      if (!upstream || !upstream.ok) {
+      const rangeHeader = req.header('range') || undefined;
+      const upstream = await fetchDriveMediaStream(driveId, optionalToken, rangeHeader);
+      if (!upstream || (!upstream.ok && upstream.status !== 206)) {
         res.status(404).json({ error: 'Drive media file unavailable' });
         return;
       }
+
       const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+      res.status(upstream.status === 206 ? 206 : 200);
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=3600');
+      const acceptRanges = upstream.headers.get('accept-ranges') || 'bytes';
+      res.setHeader('Accept-Ranges', acceptRanges);
+
+      const contentRange = upstream.headers.get('content-range');
+      if (contentRange) {
+        res.setHeader('Content-Range', contentRange);
+      }
+      const contentLength = upstream.headers.get('content-length');
+      if (contentLength) {
+        res.setHeader('Content-Length', contentLength);
+      }
       if (req.query.download === '1') {
         res.setHeader('Content-Disposition', `attachment; filename="mjay2026-${driveId}"`);
       }
-      const buf = Buffer.from(await upstream.arrayBuffer());
-      res.send(buf);
+
+      if (upstream.body) {
+        const nodeStream = Readable.fromWeb(upstream.body as unknown as NodeWebReadableStream);
+        nodeStream.on('error', () => {
+          if (!res.headersSent) res.status(502);
+          res.end();
+        });
+        nodeStream.pipe(res);
+      } else {
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        res.send(buf);
+      }
     } catch {
       res.status(500).json({ error: 'Error retrieving Drive media' });
     }

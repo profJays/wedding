@@ -1067,6 +1067,439 @@ export async function storeGalleryFileInDrive(params: {
   };
 }
 
+export interface ResumableSessionRecord {
+  sessionId: string;
+  driveUploadUri: string;
+  originalName: string;
+  uploadName: string;
+  mediaType: 'image' | 'video';
+  mimeType: string;
+  sizeBytes: number;
+  category: DriveMediaCategory;
+  targetFolderId: string;
+  folderName: string;
+  isAdminUpload: boolean;
+  fromBrowserSession: boolean;
+  createdAtMs: number;
+}
+
+const RESUMABLE_CHUNK_BYTES = 8 * 1024 * 1024; // 8 MiB (multiple of 256 KiB, safely < 32 MiB proxy limit)
+const RESUMABLE_SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const resumableSessions = new Map<string, ResumableSessionRecord>();
+
+function pruneExpiredResumableSessions(): void {
+  const cutoff = Date.now() - RESUMABLE_SESSION_TTL_MS;
+  for (const [id, rec] of resumableSessions.entries()) {
+    if (rec.createdAtMs < cutoff) {
+      resumableSessions.delete(id);
+    }
+  }
+}
+
+function buildSanitizedUploadName(originalName: string): {
+  cleanOriginal: string;
+  uploadName: string;
+} {
+  const ext =
+    path.extname(originalName).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10) || '.bin';
+  const cleanOriginal = path
+    .basename(originalName)
+    .replace(/[^a-zA-Z0-9._\- ]/g, '_')
+    .slice(0, 100);
+  const uploadName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}_${
+    cleanOriginal || `media${ext}`
+  }`;
+  return { cleanOriginal: cleanOriginal || uploadName, uploadName };
+}
+
+async function applyPublicDriveReadPermission(
+  driveFileId: string,
+  accessToken: string
+): Promise<void> {
+  const permRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      driveFileId
+    )}/permissions?supportsAllDrives=true`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    }
+  );
+  if (!permRes.ok) {
+    console.warn(
+      `Google Drive public reader permission warning for ${driveFileId}: ${permRes.status}`
+    );
+  }
+}
+
+export async function initiateDriveResumableSession(params: {
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  category: DriveMediaCategory;
+  mediaType: 'image' | 'video';
+  origin?: string;
+  driveAccessTokenHeader?: string;
+  isAdminUpload?: boolean;
+}): Promise<{
+  sessionId: string;
+  driveUploadUri: string;
+  chunkBytes: number;
+  folderName: string;
+}> {
+  pruneExpiredResumableSessions();
+
+  const audience: 'admin' | 'public' = params.isAdminUpload ? 'admin' : 'public';
+  getRequiredFolderId(audience);
+
+  let { accessToken, source } = await resolveAccessToken({
+    driveAccessTokenHeader: params.isAdminUpload ? params.driveAccessTokenHeader : undefined,
+    allowBrowserFallback: Boolean(params.isAdminUpload),
+    audience
+  });
+
+  const { cleanOriginal, uploadName } = buildSanitizedUploadName(params.originalName);
+
+  let target = await resolveTargetFolder(
+    accessToken,
+    params.category,
+    params.mediaType,
+    source === 'header'
+  );
+
+  const createResumableSession = async (parentFolderId: string, tokenToUse: string) => {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${tokenToUse}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': params.mimeType,
+      'X-Upload-Content-Length': String(params.sizeBytes)
+    };
+    if (params.origin) {
+      headers['Origin'] = params.origin;
+    }
+
+    return fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,mimeType,size',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: uploadName,
+          parents: [parentFolderId]
+        })
+      }
+    );
+  };
+
+  let initRes = await createResumableSession(target.folderId, accessToken);
+
+  if (initRes.status === 401 && source === 'refresh') {
+    const retried = await resolveAccessToken({
+      forceRefresh: true,
+      allowBrowserFallback: false,
+      audience
+    });
+    accessToken = retried.accessToken;
+    source = retried.source;
+    initRes = await createResumableSession(target.folderId, accessToken);
+  }
+
+  if (initRes.status === 404) {
+    await ensureDriveFolderStructure(accessToken, { fromBrowserSession: source === 'header' });
+    target = await resolveTargetFolder(
+      accessToken,
+      params.category,
+      params.mediaType,
+      source === 'header'
+    );
+    initRes = await createResumableSession(target.folderId, accessToken);
+  }
+
+  if (initRes.status === 401) {
+    if (source === 'refresh') {
+      cachedServerRefreshToken = null;
+      serverRefreshVerified = false;
+    }
+    const errorCode: DriveStorageErrorCode =
+      source === 'refresh' ? 'DRIVE_REFRESH_EXPIRED' : 'DRIVE_AUTH_EXPIRED';
+    const adminMsg =
+      source === 'refresh'
+        ? 'The refreshed Google Drive access token was rejected (401). Reconnect Google Drive in the Admin Dashboard or update GOOGLE_OAUTH_REFRESH_TOKEN.'
+        : 'Your browser Google Drive session has expired. Click "Connect Google Drive" to reconnect and retry your upload.';
+    updateDriveState({
+      oauthConnected: source === 'header' ? false : readDriveState().oauthConnected,
+      lastError: adminMsg
+    });
+    throw new DriveStorageError(
+      audience === 'admin' ? adminMsg : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG,
+      401,
+      errorCode
+    );
+  }
+
+  if (initRes.status === 403) {
+    const errText = await initRes.text().catch(() => '');
+    updateDriveState({
+      lastError: `Google Drive folder permission denied (403)${
+        errText ? `: ${errText.slice(0, 140)}` : '.'
+      }`
+    });
+    throw new DriveStorageError(
+      audience === 'admin'
+        ? "You don't have permission to upload files to this Google Drive folder. Check the connected Drive account or folder permissions."
+        : PUBLIC_GUEST_STORAGE_UNAVAILABLE_MSG,
+      403,
+      'DRIVE_PERMISSION_ERROR'
+    );
+  }
+
+  if (!initRes.ok) {
+    const errText = await initRes.text().catch(() => '');
+    let msg = `Google Drive resumable session init failed (${initRes.status})`;
+    try {
+      const parsed = JSON.parse(errText) as { error?: { message?: string } };
+      if (parsed.error?.message) {
+        msg = `Google Drive resumable init failed (${initRes.status}): ${parsed.error.message}`;
+      }
+    } catch {
+      if (errText) msg = `Google Drive resumable init failed (${initRes.status}): ${errText.slice(0, 180)}`;
+    }
+    updateDriveState({ lastError: msg });
+    throw new DriveStorageError(
+      'Unable to initialize upload session with Google Drive. Please try again in a moment.',
+      502,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  const driveUploadUri = initRes.headers.get('location') || '';
+  if (!driveUploadUri) {
+    throw new DriveStorageError(
+      'Google Drive did not return a resumable upload session URI. Please retry.',
+      502,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  const sessionId = crypto.randomUUID();
+  resumableSessions.set(sessionId, {
+    sessionId,
+    driveUploadUri,
+    originalName: cleanOriginal,
+    uploadName,
+    mediaType: params.mediaType,
+    mimeType: params.mimeType,
+    sizeBytes: params.sizeBytes,
+    category: params.category,
+    targetFolderId: target.folderId,
+    folderName: target.label,
+    isAdminUpload: Boolean(params.isAdminUpload),
+    fromBrowserSession: source === 'header',
+    createdAtMs: Date.now()
+  });
+
+  return {
+    sessionId,
+    driveUploadUri,
+    chunkBytes: RESUMABLE_CHUNK_BYTES,
+    folderName: target.label
+  };
+}
+
+export async function relayResumableChunkToDrive(params: {
+  sessionId: string;
+  chunk: Buffer;
+  contentRange: string;
+  contentType?: string;
+}): Promise<{
+  status: number;
+  rangeHeader: string | null;
+  bodyText: string;
+}> {
+  pruneExpiredResumableSessions();
+  const session = resumableSessions.get(params.sessionId);
+  if (!session) {
+    throw new DriveStorageError(
+      'Resumable upload session expired or could not be found. Please restart this upload.',
+      404,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Length': String(params.chunk.length),
+    'Content-Range': params.contentRange
+  };
+  if (params.contentType) {
+    headers['Content-Type'] = params.contentType;
+  }
+
+  const upstream = await fetch(session.driveUploadUri, {
+    method: 'PUT',
+    headers,
+    body: new Uint8Array(params.chunk)
+  });
+
+  const bodyText = await upstream.text().catch(() => '');
+  const rangeHeader = upstream.headers.get('range');
+
+  return {
+    status: upstream.status,
+    rangeHeader,
+    bodyText
+  };
+}
+
+export async function completeDriveResumableSession(params: {
+  sessionId: string;
+  driveFileIdHint?: string;
+  driveAccessTokenHeader?: string;
+  isAdminUpload?: boolean;
+}): Promise<StoredMediaResult> {
+  pruneExpiredResumableSessions();
+  const session = resumableSessions.get(params.sessionId);
+  if (!session) {
+    throw new DriveStorageError(
+      'Resumable upload session expired or was already completed.',
+      404,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  const audience: 'admin' | 'public' =
+    session.isAdminUpload || params.isAdminUpload ? 'admin' : 'public';
+
+  let fileId = (params.driveFileIdHint || '').replace(/[^a-zA-Z0-9_\-]/g, '');
+
+  // If browser response didn't expose fileId (or needs session confirmation), query Drive session status
+  if (!fileId) {
+    const statusRes = await fetch(session.driveUploadUri, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': '0',
+        'Content-Range': `bytes */${session.sizeBytes}`
+      }
+    });
+    if (statusRes.ok) {
+      const parsed = (await statusRes.json().catch(() => ({}))) as { id?: string };
+      if (parsed.id) {
+        fileId = parsed.id;
+      }
+    }
+  }
+
+  if (!fileId) {
+    throw new DriveStorageError(
+      'Google Drive did not confirm the completed upload file ID. Please retry the upload.',
+      502,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  let { accessToken, source } = await resolveAccessToken({
+    driveAccessTokenHeader: session.isAdminUpload ? params.driveAccessTokenHeader : undefined,
+    allowBrowserFallback: session.isAdminUpload,
+    audience
+  });
+
+  const fetchMeta = async (tokenToUse: string) =>
+    fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        fileId
+      )}?fields=id,name,mimeType,size,parents,trashed&supportsAllDrives=true`,
+      {
+        headers: { Authorization: `Bearer ${tokenToUse}` }
+      }
+    );
+
+  let metaRes = await fetchMeta(accessToken);
+  if (metaRes.status === 401 && source === 'refresh') {
+    const retried = await resolveAccessToken({
+      forceRefresh: true,
+      allowBrowserFallback: false,
+      audience
+    });
+    accessToken = retried.accessToken;
+    source = retried.source;
+    metaRes = await fetchMeta(accessToken);
+  }
+
+  if (!metaRes.ok) {
+    throw new DriveStorageError(
+      'Could not verify the uploaded file in Google Drive. Please retry.',
+      502,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  const fileMeta = (await metaRes.json()) as {
+    id?: string;
+    name?: string;
+    mimeType?: string;
+    size?: string;
+    parents?: string[];
+    trashed?: boolean;
+  };
+
+  if (
+    !fileMeta.id ||
+    fileMeta.trashed ||
+    !Array.isArray(fileMeta.parents) ||
+    !fileMeta.parents.includes(session.targetFolderId)
+  ) {
+    throw new DriveStorageError(
+      'Uploaded file did not match the authorized Google Drive destination folder.',
+      403,
+      'DRIVE_PERMISSION_ERROR'
+    );
+  }
+
+  const confirmedSize = Number(fileMeta.size || 0);
+  if (!Number.isFinite(confirmedSize) || confirmedSize <= 0) {
+    throw new DriveStorageError(
+      'The uploaded file in Google Drive appears incomplete or empty (0 bytes). Please retry.',
+      502,
+      'DRIVE_API_ERROR'
+    );
+  }
+
+  await applyPublicDriveReadPermission(fileMeta.id, accessToken);
+
+  updateDriveState({
+    oauthConnected: source === 'header' ? true : readDriveState().oauthConnected,
+    lastUploadAt: new Date().toISOString(),
+    lastError: null
+  });
+
+  resumableSessions.delete(params.sessionId);
+
+  return {
+    storageProvider: 'google_drive',
+    driveFileId: fileMeta.id,
+    fileUrl: `/api/gallery/drive/${encodeURIComponent(fileMeta.id)}`,
+    sizeBytes: confirmedSize,
+    mimeType: session.mimeType,
+    originalName: session.originalName,
+    category: session.category,
+    folderName: session.folderName
+  };
+}
+
+export async function abortDriveResumableSession(sessionId: string): Promise<void> {
+  const session = resumableSessions.get(sessionId);
+  if (!session) return;
+  resumableSessions.delete(sessionId);
+  try {
+    await fetch(session.driveUploadUri, { method: 'DELETE' });
+  } catch {
+    // Best-effort cleanup of abandoned Drive resumable URI
+  }
+}
+
 export function resolveLocalMediaPath(fileId: string): string | null {
   const safeId = path.basename(fileId);
   if (!safeId || safeId !== fileId || !/^[a-zA-Z0-9._\-]+$/.test(safeId)) {
@@ -1111,28 +1544,35 @@ export async function deleteStoredGalleryFile(
 
 export async function fetchDriveMediaStream(
   driveFileId: string,
-  driveAccessTokenHeader?: string
+  driveAccessTokenHeader?: string,
+  rangeHeader?: string
 ): Promise<Response | null> {
   // Prefer server refresh token over browser session header whenever configured
   const token =
     (await getServerRefreshAccessToken()) || (driveAccessTokenHeader || '').trim() || null;
   if (token) {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (rangeHeader) {
+      headers['Range'] = rangeHeader;
+    }
     const authRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveFileId)}?alt=media&supportsAllDrives=true`,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
+      { headers }
     );
-    if (authRes.ok) return authRes;
+    if (authRes.ok || authRes.status === 206) return authRes;
   }
 
   // Public anyone-with-link fallback for website visitors when no server/user OAuth token is active
+  const ucHeaders: Record<string, string> = {};
+  if (rangeHeader) {
+    ucHeaders['Range'] = rangeHeader;
+  }
   const ucRes = await fetch(
     `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveFileId)}`,
-    { redirect: 'follow' }
+    { redirect: 'follow', headers: ucHeaders }
   );
   const ucContentType = (ucRes.headers.get('content-type') || '').toLowerCase();
-  if (ucRes.ok && !ucContentType.includes('text/html')) {
+  if ((ucRes.ok || ucRes.status === 206) && !ucContentType.includes('text/html')) {
     return ucRes;
   }
 
@@ -1143,5 +1583,5 @@ export async function fetchDriveMediaStream(
   );
   if (lh3Res.ok) return lh3Res;
 
-  return ucRes.ok ? ucRes : null;
+  return ucRes.ok || ucRes.status === 206 ? ucRes : null;
 }

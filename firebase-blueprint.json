@@ -32,6 +32,9 @@
         "themePrimaryHex": { "type": "string", "maxLength": 20 },
         "themeAccentHex": { "type": "string", "maxLength": 20 },
         "themeGoldHex": { "type": "string", "maxLength": 20 },
+        "puzzleEnabled": { "type": "boolean" },
+        "puzzleImageFileId": { "type": "string", "maxLength": 200 },
+        "puzzleImageUrl": { "type": "string", "maxLength": 500 },
         "updatedAt": { "type": "string", "format": "date-time" },
         "updatedByUid": { "type": "string", "maxLength": 128 }
       },

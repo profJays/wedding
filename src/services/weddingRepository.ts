@@ -30,8 +30,12 @@ import {
   DriveConnectionStatus,
   DriveTestConnectionResponse,
   DriveMediaCategory,
+  ResumableCompleteResponse,
+  ResumableInitResponse,
   UploadBatchResponse,
-  UploadFileResult
+  UploadErrorCode,
+  UploadFileResult,
+  UploadedFileMetadata
 } from '../types';
 
 const SITE_CONTENT_DOC_PATH = 'siteContent/main';
@@ -86,6 +90,18 @@ export function subscribeSiteContent(
       onData({
         ...DEFAULT_SITE_CONTENT,
         ...raw,
+        puzzleEnabled:
+          typeof raw.puzzleEnabled === 'boolean'
+            ? raw.puzzleEnabled
+            : DEFAULT_SITE_CONTENT.puzzleEnabled,
+        puzzleImageFileId:
+          typeof raw.puzzleImageFileId === 'string'
+            ? raw.puzzleImageFileId
+            : DEFAULT_SITE_CONTENT.puzzleImageFileId,
+        puzzleImageUrl:
+          typeof raw.puzzleImageUrl === 'string' && raw.puzzleImageUrl.trim().length > 0
+            ? raw.puzzleImageUrl
+            : DEFAULT_SITE_CONTENT.puzzleImageUrl,
         welcomeParagraphs: Array.isArray(raw.welcomeParagraphs) && raw.welcomeParagraphs.length > 0
           ? raw.welcomeParagraphs
           : DEFAULT_SITE_CONTENT.welcomeParagraphs,
@@ -112,6 +128,12 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
   if (!uid) {
     throw new Error('Administrator authentication is required.');
   }
+
+  const rawPuzzleUrl = (content.puzzleImageUrl || '').trim();
+  const safePuzzleUrl =
+    rawPuzzleUrl && !rawPuzzleUrl.startsWith('blob:')
+      ? rawPuzzleUrl.slice(0, 500)
+      : (DEFAULT_SITE_CONTENT.puzzleImageUrl || '').slice(0, 500);
 
   const unlockMs = new Date(content.galleryUnlockISO).getTime();
   const payload = {
@@ -144,6 +166,9 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
     themePrimaryHex: (content.themePrimaryHex || '#07543E').slice(0, 20),
     themeAccentHex: (content.themeAccentHex || '#737746').slice(0, 20),
     themeGoldHex: (content.themeGoldHex || '#C5A04A').slice(0, 20),
+    puzzleEnabled: content.puzzleEnabled !== false,
+    puzzleImageFileId: (content.puzzleImageFileId || '').trim().slice(0, 200),
+    puzzleImageUrl: safePuzzleUrl,
     updatedAt: serverTimestamp(),
     updatedByUid: uid
   };
@@ -384,43 +409,380 @@ export interface UploadMediaBatchOutcome {
   globalError: string | null;
 }
 
-export async function uploadGalleryMediaFiles(params: {
-  entries: Array<{ id: string; file: File }>;
-  guestName: string;
-  caption: string;
+const RESUMABLE_THRESHOLD_BYTES = 4 * 1024 * 1024; // Files > 4 MB and ALL videos use chunked resumable upload
+const MAX_CHUNK_RETRIES = 3;
+
+function parseRangeHeaderLastByte(rangeHeader: string | null): number | null {
+  if (!rangeHeader) return null;
+  const match = rangeHeader.match(/bytes=0-(\d+)/i);
+  if (!match) return null;
+  const val = Number(match[1]);
+  return Number.isFinite(val) ? val : null;
+}
+
+function isVideoFileClient(file: File): boolean {
+  const mime = (file.type || '').toLowerCase();
+  if (mime.startsWith('video/')) return true;
+  const name = (file.name || '').toLowerCase();
+  return /\.(mp4|mov|webm|m4v)$/.test(name);
+}
+
+function sendChunkXhr(params: {
+  url: string;
+  chunk: Blob;
+  contentRange: string;
+  contentType?: string;
+  onChunkProgress: (loadedBytes: number) => void;
+}): Promise<{
+  status: number;
+  rangeHeader: string | null;
+  bodyText: string;
+  networkError: boolean;
+}> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', params.url, true);
+    xhr.setRequestHeader('Content-Range', params.contentRange);
+    if (params.contentType) {
+      xhr.setRequestHeader('Content-Type', params.contentType);
+    }
+
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        params.onChunkProgress(ev.loaded);
+      }
+    };
+
+    xhr.onload = () => {
+      let rangeHeader: string | null = null;
+      try {
+        rangeHeader =
+          xhr.getResponseHeader('X-Drive-Range') || xhr.getResponseHeader('Range');
+      } catch {
+        rangeHeader = null;
+      }
+      resolve({
+        status: xhr.status,
+        rangeHeader,
+        bodyText: xhr.responseText || '',
+        networkError: false
+      });
+    };
+
+    xhr.onerror = () => {
+      resolve({ status: 0, rangeHeader: null, bodyText: '', networkError: true });
+    };
+
+    xhr.ontimeout = () => {
+      resolve({ status: 0, rangeHeader: null, bodyText: '', networkError: true });
+    };
+
+    xhr.send(params.chunk);
+  });
+}
+
+async function queryCommittedOffsetDirect(
+  driveUploadUri: string,
+  totalBytes: number
+): Promise<{ status: number; nextOffset: number; driveFileId?: string }> {
+  try {
+    const res = await fetch(driveUploadUri, {
+      method: 'PUT',
+      headers: {
+        'Content-Range': `bytes */${totalBytes}`
+      }
+    });
+    if (res.status === 200 || res.status === 201) {
+      const parsed = (await res.json().catch(() => ({}))) as { id?: string };
+      return { status: res.status, nextOffset: totalBytes, driveFileId: parsed.id };
+    }
+    if (res.status === 308) {
+      const lastByte = parseRangeHeaderLastByte(res.headers.get('Range'));
+      return { status: 308, nextOffset: lastByte !== null ? lastByte + 1 : 0 };
+    }
+    return { status: res.status, nextOffset: 0 };
+  } catch {
+    return { status: 0, nextOffset: 0 };
+  }
+}
+
+async function uploadSingleFileResumable(params: {
+  entry: { id: string; file: File };
   category?: DriveMediaCategory;
   isAdmin?: boolean;
-  onProgress?: (percent: number) => void;
-}): Promise<UploadMediaBatchOutcome> {
-  const formData = new FormData();
-  if (params.category) {
-    formData.append('category', params.category);
+  idToken: string | null;
+  driveToken: string | null;
+  onFileBytesLoaded: (bytesLoaded: number) => void;
+}): Promise<{
+  result: UploadFileResult;
+  needsDriveReconnect: boolean;
+}> {
+  const { entry, isAdmin, idToken, driveToken, onFileBytesLoaded } = params;
+  const authHeaders: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  if (idToken) authHeaders['Authorization'] = `Bearer ${idToken}`;
+  if (driveToken) authHeaders['X-Google-Drive-Token'] = driveToken;
+
+  let initRes: Response;
+  try {
+    initRes = await fetch('/api/gallery/upload/resumable/init', {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        originalName: entry.file.name,
+        mimeType: entry.file.type || 'application/octet-stream',
+        sizeBytes: entry.file.size,
+        category: params.category,
+        clientFileId: entry.id
+      })
+    });
+  } catch {
+    return {
+      result: {
+        clientFileId: entry.id,
+        originalName: entry.file.name,
+        status: 'failed',
+        errorCode: 'NETWORK_ERROR',
+        errorMessage:
+          'Upload could not start due to a network interruption. Check your connection and retry.'
+      },
+      needsDriveReconnect: false
+    };
   }
-  formData.append(
-    'clientFileIds',
-    JSON.stringify(params.entries.map((entry) => entry.id))
-  );
-  params.entries.forEach((entry) => formData.append('files', entry.file));
 
-  const idToken =
-    params.isAdmin && auth.currentUser ? await auth.currentUser.getIdToken() : null;
-  const driveToken = params.isAdmin ? getDriveAccessToken() : null;
+  const initBody = (await initRes.json().catch(() => ({}))) as Partial<
+    ResumableInitResponse & { error?: string; code?: UploadErrorCode }
+  >;
 
-  // Use XMLHttpRequest so callers receive real upload progress events
+  if (!initRes.ok || !initBody.sessionId || !initBody.driveUploadUri) {
+    if (isAdmin && initRes.status === 401 && initBody.code === 'DRIVE_AUTH_EXPIRED') {
+      clearExpiredDriveToken();
+    }
+    const needsReconnect = Boolean(
+      isAdmin &&
+        (initRes.status === 401 ||
+          initBody.code === 'DRIVE_AUTH_MISSING' ||
+          initBody.code === 'DRIVE_AUTH_EXPIRED' ||
+          initBody.code === 'DRIVE_REFRESH_EXPIRED')
+    );
+    return {
+      result: {
+        clientFileId: entry.id,
+        originalName: entry.file.name,
+        status: initRes.status === 400 ? 'rejected' : 'failed',
+        errorCode:
+          initBody.code || (initRes.status >= 500 ? 'SERVER_ERROR' : 'VALIDATION_ERROR'),
+        errorMessage:
+          initBody.error ||
+          `Upload could not be started (${initRes.status}). Please check your file and try again.`
+      },
+      needsDriveReconnect: needsReconnect
+    };
+  }
+
+  const sessionId = initBody.sessionId;
+  const driveUploadUri = initBody.driveUploadUri;
+  const chunkSize = Math.max(256 * 1024, initBody.chunkBytes || 8 * 1024 * 1024);
+  const totalBytes = entry.file.size;
+  let offset = 0;
+  let useServerRelay = false;
+  let confirmedDriveFileId: string | undefined;
+
+  try {
+    while (offset < totalBytes) {
+      const endExclusive = Math.min(offset + chunkSize, totalBytes);
+      const chunkBlob = entry.file.slice(offset, endExclusive);
+      const contentRange = `bytes ${offset}-${endExclusive - 1}/${totalBytes}`;
+      let chunkDone = false;
+
+      for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+        const targetUrl = useServerRelay
+          ? `/api/gallery/upload/resumable/chunk/${encodeURIComponent(sessionId)}`
+          : driveUploadUri;
+
+        const resp = await sendChunkXhr({
+          url: targetUrl,
+          chunk: chunkBlob,
+          contentRange,
+          contentType: initBody.mimeType,
+          onChunkProgress: (loaded) => {
+            onFileBytesLoaded(Math.min(totalBytes, offset + loaded));
+          }
+        });
+
+        // If browser CORS/sandbox blocks direct PUT to Google Drive on chunk 0, switch seamlessly to 8 MiB server relay
+        if (!useServerRelay && resp.networkError && offset === 0 && attempt === 0) {
+          useServerRelay = true;
+          continue;
+        }
+
+        if (resp.status === 308 || (useServerRelay && resp.status === 200)) {
+          let parsedRelay: {
+            incomplete?: boolean;
+            id?: string;
+            range?: string | null;
+          } = {};
+          if (useServerRelay) {
+            try {
+              parsedRelay = JSON.parse(resp.bodyText || '{}') as typeof parsedRelay;
+            } catch {
+              parsedRelay = {};
+            }
+          }
+
+          if (useServerRelay && parsedRelay.incomplete === false) {
+            if (parsedRelay.id) confirmedDriveFileId = parsedRelay.id;
+            offset = totalBytes;
+            onFileBytesLoaded(totalBytes);
+            chunkDone = true;
+            break;
+          }
+
+          const lastByte = parseRangeHeaderLastByte(
+            resp.rangeHeader || parsedRelay.range || null
+          );
+          offset = lastByte !== null ? Math.max(endExclusive, lastByte + 1) : endExclusive;
+          onFileBytesLoaded(Math.min(totalBytes, offset));
+          chunkDone = true;
+          break;
+        }
+
+        if (resp.status === 200 || resp.status === 201) {
+          try {
+            const parsed = JSON.parse(resp.bodyText || '{}') as { id?: string };
+            if (parsed.id) confirmedDriveFileId = parsed.id;
+          } catch {
+            // /complete will query Drive session status if CORS hid response JSON
+          }
+          offset = totalBytes;
+          onFileBytesLoaded(totalBytes);
+          chunkDone = true;
+          break;
+        }
+
+        const retryable =
+          resp.networkError ||
+          resp.status === 408 ||
+          resp.status === 429 ||
+          resp.status >= 500;
+
+        if (!retryable || attempt === MAX_CHUNK_RETRIES) {
+          throw new Error(
+            resp.networkError
+              ? 'Upload interrupted due to a network drop. Check your connection and retry.'
+              : `Upload chunk failed (${resp.status}). Please retry.`
+          );
+        }
+
+        await new Promise((r) => window.setTimeout(r, 600 * Math.pow(2, attempt)));
+        if (!useServerRelay) {
+          const queried = await queryCommittedOffsetDirect(driveUploadUri, totalBytes);
+          if (queried.status === 200 || queried.status === 201) {
+            confirmedDriveFileId = queried.driveFileId;
+            offset = totalBytes;
+            onFileBytesLoaded(totalBytes);
+            chunkDone = true;
+            break;
+          }
+          if (queried.status === 308 && queried.nextOffset > offset) {
+            offset = queried.nextOffset;
+            onFileBytesLoaded(Math.min(totalBytes, offset));
+            if (offset >= endExclusive) {
+              chunkDone = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!chunkDone) {
+        throw new Error('Chunk upload did not complete. Please retry.');
+      }
+    }
+
+    const completeRes = await fetch('/api/gallery/upload/resumable/complete', {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        sessionId,
+        driveFileId: confirmedDriveFileId
+      })
+    });
+
+    const completeBody = (await completeRes.json().catch(() => ({}))) as Partial<
+      ResumableCompleteResponse & { error?: string; code?: UploadErrorCode }
+    >;
+
+    if (!completeRes.ok || !completeBody.item?.driveFileId) {
+      throw new Error(
+        completeBody.error ||
+          `Upload could not be finalized (${completeRes.status}). Please retry.`
+      );
+    }
+
+    return {
+      result: {
+        clientFileId: entry.id,
+        originalName: entry.file.name,
+        status: 'uploaded',
+        item: completeBody.item
+      },
+      needsDriveReconnect: false
+    };
+  } catch (err) {
+    // Clean up abandoned resumable session on Drive cleanly
+    await fetch(`/api/gallery/upload/resumable/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE'
+    }).catch(() => undefined);
+
+    const msg =
+      err instanceof Error
+        ? err.message
+        : 'Upload interrupted due to a network issue. Please retry.';
+    return {
+      result: {
+        clientFileId: entry.id,
+        originalName: entry.file.name,
+        status: 'failed',
+        errorCode: /network|interrupted|connection/i.test(msg) ? 'NETWORK_ERROR' : 'DRIVE_API_ERROR',
+        errorMessage: msg
+      },
+      needsDriveReconnect: false
+    };
+  }
+}
+
+async function uploadSingleSmallFileMultipart(params: {
+  entry: { id: string; file: File };
+  category?: DriveMediaCategory;
+  isAdmin?: boolean;
+  idToken: string | null;
+  driveToken: string | null;
+  onFileBytesLoaded: (bytesLoaded: number) => void;
+}): Promise<{
+  result: UploadFileResult;
+  needsDriveReconnect: boolean;
+}> {
+  const { entry, category, isAdmin, idToken, driveToken, onFileBytesLoaded } = params;
+  const formData = new FormData();
+  if (category) formData.append('category', category);
+  formData.append('clientFileIds', JSON.stringify([entry.id]));
+  formData.append('files', entry.file);
+
   const serverResponse = await new Promise<UploadBatchResponse>((resolve) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/gallery/upload', true);
-    if (idToken) {
-      xhr.setRequestHeader('Authorization', `Bearer ${idToken}`);
-    }
-    if (driveToken) {
-      xhr.setRequestHeader('X-Google-Drive-Token', driveToken);
-    }
+    if (idToken) xhr.setRequestHeader('Authorization', `Bearer ${idToken}`);
+    if (driveToken) xhr.setRequestHeader('X-Google-Drive-Token', driveToken);
+
     xhr.upload.onprogress = (ev) => {
-      if (ev.lengthComputable && params.onProgress) {
-        params.onProgress(Math.round((ev.loaded / ev.total) * 100));
+      if (ev.lengthComputable) {
+        const scaled = Math.round((ev.loaded / ev.total) * entry.file.size);
+        onFileBytesLoaded(Math.min(entry.file.size, scaled));
       }
     };
+
     xhr.onload = () => {
       let body: Partial<UploadBatchResponse> = {};
       try {
@@ -428,62 +790,51 @@ export async function uploadGalleryMediaFiles(params: {
       } catch {
         body = {};
       }
-
-      if (
-        params.isAdmin &&
-        xhr.status === 401 &&
-        body.code === 'DRIVE_AUTH_EXPIRED'
-      ) {
+      if (isAdmin && xhr.status === 401 && body.code === 'DRIVE_AUTH_EXPIRED') {
         clearExpiredDriveToken();
       }
-
       const fallbackMsg =
         xhr.status === 401
-          ? params.isAdmin
+          ? isAdmin
             ? 'Google Drive authorization is missing or expired. Connect Google Drive or verify your server refresh token and retry.'
             : 'Photo and video uploads are temporarily unavailable while the couple finishes connecting the wedding gallery storage. Please try again shortly.'
           : xhr.status === 403
-          ? params.isAdmin
-            ? "You don't have permission to upload files to this Google Drive folder. Check the connected Drive account or folder permissions."
-            : 'Gallery uploads are not open yet or storage is temporarily restricted. Please check the countdown or try again later.'
+          ? isAdmin
+            ? "You don't have permission to upload files to this Google Drive folder."
+            : 'Gallery uploads are not open yet or storage is temporarily restricted.'
           : xhr.status >= 500
           ? 'Something went wrong on our end while uploading your files. Please try again in a moment.'
           : `Upload could not be completed (${xhr.status}). Please check your selected files and try again.`;
 
-      const normalizedResults: UploadFileResult[] =
-        Array.isArray(body.results) && body.results.length > 0
-          ? body.results
-          : params.entries.map((entry) => ({
+      const singleResult: UploadFileResult =
+        Array.isArray(body.results) && body.results[0]
+          ? body.results[0]
+          : {
               clientFileId: entry.id,
               originalName: entry.file.name,
-              status: 'failed' as const,
+              status: 'failed',
               errorCode: body.code || (xhr.status >= 500 ? 'SERVER_ERROR' : 'VALIDATION_ERROR'),
               errorMessage: body.error || fallbackMsg
-            }));
-
-      const uploadedList = Array.isArray(body.uploaded) ? body.uploaded : [];
-      const summary = body.summary || {
-        total: params.entries.length,
-        succeeded: uploadedList.length,
-        failed: Math.max(0, params.entries.length - uploadedList.length)
-      };
+            };
 
       resolve({
-        uploaded: uploadedList,
-        results: normalizedResults,
-        summary,
+        uploaded: Array.isArray(body.uploaded) ? body.uploaded : [],
+        results: [singleResult],
+        summary: {
+          total: 1,
+          succeeded: singleResult.status === 'uploaded' ? 1 : 0,
+          failed: singleResult.status === 'uploaded' ? 0 : 1
+        },
         error: xhr.status >= 200 && xhr.status < 300 ? body.error : body.error || fallbackMsg,
         code: body.code,
         needsDriveReconnect: Boolean(
-          params.isAdmin &&
+          isAdmin &&
             (body.needsDriveReconnect ||
               xhr.status === 401 ||
               body.code === 'DRIVE_AUTH_MISSING' ||
               body.code === 'DRIVE_AUTH_EXPIRED' ||
               body.code === 'DRIVE_REFRESH_EXPIRED')
-        ),
-        serverTimeMs: body.serverTimeMs,
-        isAdminUpload: body.isAdminUpload
+        )
       });
     };
 
@@ -491,18 +842,16 @@ export async function uploadGalleryMediaFiles(params: {
       const msg = 'Upload interrupted due to a network issue. Check your connection and retry your upload.';
       resolve({
         uploaded: [],
-        results: params.entries.map((entry) => ({
-          clientFileId: entry.id,
-          originalName: entry.file.name,
-          status: 'failed',
-          errorCode: 'NETWORK_ERROR',
-          errorMessage: msg
-        })),
-        summary: {
-          total: params.entries.length,
-          succeeded: 0,
-          failed: params.entries.length
-        },
+        results: [
+          {
+            clientFileId: entry.id,
+            originalName: entry.file.name,
+            status: 'failed',
+            errorCode: 'NETWORK_ERROR',
+            errorMessage: msg
+          }
+        ],
+        summary: { total: 1, succeeded: 0, failed: 1 },
         error: msg,
         code: 'NETWORK_ERROR',
         needsDriveReconnect: false
@@ -513,18 +862,16 @@ export async function uploadGalleryMediaFiles(params: {
       const msg = 'The upload timed out before finishing. Check your connection and retry your upload.';
       resolve({
         uploaded: [],
-        results: params.entries.map((entry) => ({
-          clientFileId: entry.id,
-          originalName: entry.file.name,
-          status: 'failed',
-          errorCode: 'NETWORK_ERROR',
-          errorMessage: msg
-        })),
-        summary: {
-          total: params.entries.length,
-          succeeded: 0,
-          failed: params.entries.length
-        },
+        results: [
+          {
+            clientFileId: entry.id,
+            originalName: entry.file.name,
+            status: 'failed',
+            errorCode: 'NETWORK_ERROR',
+            errorMessage: msg
+          }
+        ],
+        summary: { total: 1, succeeded: 0, failed: 1 },
         error: msg,
         code: 'NETWORK_ERROR',
         needsDriveReconnect: false
@@ -534,9 +881,88 @@ export async function uploadGalleryMediaFiles(params: {
     xhr.send(formData);
   });
 
+  return {
+    result: serverResponse.results[0],
+    needsDriveReconnect: Boolean(serverResponse.needsDriveReconnect)
+  };
+}
+
+export async function uploadGalleryMediaFiles(params: {
+  entries: Array<{ id: string; file: File }>;
+  guestName: string;
+  caption: string;
+  category?: DriveMediaCategory;
+  isAdmin?: boolean;
+  onProgress?: (percent: number) => void;
+}): Promise<UploadMediaBatchOutcome> {
+  const idToken =
+    params.isAdmin && auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const driveToken = params.isAdmin ? getDriveAccessToken() : null;
+
+  const totalBatchBytes = Math.max(
+    1,
+    params.entries.reduce((sum, entry) => sum + Math.max(1, entry.file.size), 0)
+  );
+  const loadedByFile = new Map<string, number>();
+
+  const updateAggregateProgress = () => {
+    if (!params.onProgress) return;
+    let totalLoaded = 0;
+    for (const v of loadedByFile.values()) {
+      totalLoaded += v;
+    }
+    params.onProgress(Math.min(99, Math.round((totalLoaded / totalBatchBytes) * 100)));
+  };
+
+  const finalResults: UploadFileResult[] = [];
+  let needsDriveReconnect = false;
+  let globalError: string | null = null;
+
+  for (const entry of params.entries) {
+    const useResumable =
+      isVideoFileClient(entry.file) || entry.file.size > RESUMABLE_THRESHOLD_BYTES;
+
+    const singleOutcome = useResumable
+      ? await uploadSingleFileResumable({
+          entry,
+          category: params.category,
+          isAdmin: params.isAdmin,
+          idToken,
+          driveToken,
+          onFileBytesLoaded: (bytes) => {
+            loadedByFile.set(entry.id, bytes);
+            updateAggregateProgress();
+          }
+        })
+      : await uploadSingleSmallFileMultipart({
+          entry,
+          category: params.category,
+          isAdmin: params.isAdmin,
+          idToken,
+          driveToken,
+          onFileBytesLoaded: (bytes) => {
+            loadedByFile.set(entry.id, bytes);
+            updateAggregateProgress();
+          }
+        });
+
+    if (singleOutcome.needsDriveReconnect) {
+      needsDriveReconnect = true;
+    }
+    if (singleOutcome.result.status !== 'uploaded' && !globalError) {
+      globalError = singleOutcome.result.errorMessage || null;
+    }
+
+    loadedByFile.set(entry.id, entry.file.size);
+    finalResults.push(singleOutcome.result);
+  }
+
+  if (params.onProgress) {
+    params.onProgress(100);
+  }
+
   // Persist Firestore records ONLY for files confirmed created on Google Drive
   const createdItems: GalleryItem[] = [];
-  const finalResults: UploadFileResult[] = [...serverResponse.results];
 
   for (let i = 0; i < finalResults.length; i++) {
     const resItem = finalResults[i];
@@ -544,7 +970,7 @@ export async function uploadGalleryMediaFiles(params: {
       continue;
     }
 
-    const uploaded = resItem.item;
+    const uploaded: UploadedFileMetadata = resItem.item;
     const itemId = `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const title = (params.caption.trim() || uploaded.originalName || 'Wedding Moment').slice(0, 160);
     const guestName = params.guestName.trim().slice(0, 80);
@@ -587,6 +1013,9 @@ export async function uploadGalleryMediaFiles(params: {
         errorCode: 'SERVER_ERROR',
         errorMessage: `Uploaded ${resItem.originalName} to Drive, but could not save its gallery entry. Please contact the couple.`
       };
+      if (!globalError) {
+        globalError = finalResults[i].errorMessage || null;
+      }
     }
   }
 
@@ -601,8 +1030,8 @@ export async function uploadGalleryMediaFiles(params: {
       succeeded: succeededCount,
       failed: failedCount
     },
-    needsDriveReconnect: Boolean(serverResponse.needsDriveReconnect),
-    globalError: failedCount > 0 ? serverResponse.error || null : null
+    needsDriveReconnect,
+    globalError: failedCount > 0 ? globalError : null
   };
 }
 

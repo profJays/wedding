@@ -186,5 +186,8 @@ export const DEFAULT_SITE_CONTENT: SiteContentData = {
   galleryPublicEnabled: true,
   themePrimaryHex: '#07543E',
   themeAccentHex: '#737746',
-  themeGoldHex: '#C5A04A'
+  themeGoldHex: '#C5A04A',
+  puzzleEnabled: true,
+  puzzleImageFileId: '',
+  puzzleImageUrl: WEDDING_PHOTOS.story.src
 };

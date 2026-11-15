@@ -26,8 +26,12 @@ import {
   Link2,
   Unlink,
   RotateCcw,
-  Info
+  Info,
+  Puzzle,
+  Eye,
+  Image as ImageIcon
 } from 'lucide-react';
+import { WeddingPuzzleBoard } from './WeddingPhotoPuzzleSection';
 import { User } from 'firebase/auth';
 import {
   signInAdminWithGoogle,
@@ -218,6 +222,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newAdminUid, setNewAdminUid] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminName, setNewAdminName] = useState('');
+
+  // Wedding Photo Puzzle settings state
+  const [showPuzzlePicker, setShowPuzzlePicker] = useState(false);
+  const [showPuzzlePreviewModal, setShowPuzzlePreviewModal] = useState(false);
+  const [puzzleImageUploading, setPuzzleImageUploading] = useState(false);
+  const [puzzleImageProgress, setPuzzleImageProgress] = useState(0);
+  const [puzzleImageError, setPuzzleImageError] = useState<string | null>(null);
+  const puzzleFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setDraftContent(siteContent);
@@ -449,6 +461,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } finally {
       setSavingContent(false);
+    }
+  };
+
+  const handleUploadPuzzleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (puzzleFileInputRef.current) puzzleFileInputRef.current.value = '';
+    if (!file || puzzleImageUploading) return;
+
+    setPuzzleImageError(null);
+    const entry = createSelectedUploadEntry(file, adminLimits);
+    if (entry.mediaType !== 'image') {
+      setPuzzleImageError(
+        entry.validationError ||
+          'Please select an image file (JPG, PNG, WebP, GIF, HEIC, or HEIF) up to 15 MB.'
+      );
+      return;
+    }
+    if (entry.validationError) {
+      setPuzzleImageError(entry.validationError);
+      return;
+    }
+
+    setPuzzleImageUploading(true);
+    setPuzzleImageProgress(0);
+    setBannerMessage(null);
+
+    try {
+      const outcome = await uploadGalleryMediaFiles({
+        entries: [{ id: entry.id, file }],
+        guestName: siteContent.coupleNames,
+        caption: 'Wedding Photo Puzzle Portrait',
+        category: 'admin_media',
+        isAdmin: true,
+        onProgress: setPuzzleImageProgress
+      });
+
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      if (outcome.needsDriveReconnect) {
+        setAdminNeedsDriveReconnect(true);
+      }
+
+      if (outcome.createdItems.length > 0) {
+        const created = outcome.createdItems[0];
+        setDraftContent((d) => ({
+          ...d,
+          puzzleImageFileId: created.driveFileId,
+          puzzleImageUrl: created.fileUrl
+        }));
+        await loadAllAdminData();
+        setBannerMessage({
+          type: 'success',
+          text: 'Puzzle photograph uploaded to Google Drive. Click "Save Changes" to publish it live.'
+        });
+      } else {
+        const errMsg =
+          outcome.results[0]?.errorMessage ||
+          outcome.globalError ||
+          'Could not upload the puzzle photograph.';
+        setPuzzleImageError(errMsg);
+      }
+    } catch (err) {
+      setPuzzleImageError(
+        err instanceof Error ? err.message : 'Could not upload the puzzle photograph.'
+      );
+    } finally {
+      setPuzzleImageUploading(false);
     }
   };
 
@@ -2451,6 +2529,252 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ==================================================================== */}
       {activeTab === 'settings' && (
         <div className="space-y-8">
+          {/* Wedding Photo Puzzle Settings Card */}
+          <section className="p-6 sm:p-8 rounded-xl bg-[#FFFDF8] border border-[#C5A04A]/35 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#07543E]/10 pb-4">
+              <div className="flex items-start gap-3">
+                <Puzzle className="w-5 h-5 text-[#07543E] mt-1 shrink-0" />
+                <div>
+                  <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
+                    Wedding Photo Puzzle
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[#262820]/75 mt-0.5">
+                    Configure the interactive 3×3 wedding photo puzzle displayed between Schedule and Q&amp;A.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={draftContent.puzzleEnabled !== false}
+                onClick={() =>
+                  setDraftContent((d) => ({
+                    ...d,
+                    puzzleEnabled: !(d.puzzleEnabled !== false)
+                  }))
+                }
+                className={`inline-flex items-center justify-center gap-2.5 px-4 min-h-[44px] rounded-lg border text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors shrink-0 ${
+                  draftContent.puzzleEnabled !== false
+                    ? 'bg-[#07543E] text-white border-[#07543E]'
+                    : 'bg-white text-[#262820]/75 border-[#07543E]/25'
+                }`}
+              >
+                <span>
+                  {draftContent.puzzleEnabled !== false
+                    ? 'Puzzle Enabled'
+                    : 'Puzzle Hidden'}
+                </span>
+              </button>
+            </div>
+
+            {puzzleImageError && (
+              <div
+                role="alert"
+                className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 flex items-start gap-2"
+              >
+                <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                <span>{puzzleImageError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+              {/* Current Puzzle Image Preview */}
+              <div className="md:col-span-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#07543E]">
+                  Current Puzzle Image Preview
+                </p>
+                <div className="aspect-square w-full max-w-[240px] rounded-xl overflow-hidden border border-[#C5A04A]/50 bg-[#073B2B] relative">
+                  <img
+                    src={draftContent.puzzleImageUrl || WEDDING_PHOTOS.story.src}
+                    alt="Current puzzle photograph preview"
+                    className="w-full h-full object-cover object-[50%_22%]"
+                  />
+                  {/* Subtle 3x3 grid lines previewing how tiles slice */}
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none"
+                  >
+                    {Array.from({ length: 9 }).map((_, idx) => (
+                      <div key={idx} className="border border-white/25" />
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-[#262820]/65 break-all">
+                  {draftContent.puzzleImageFileId
+                    ? `Google Drive ID: ${draftContent.puzzleImageFileId}`
+                    : 'Using couple site photograph'}
+                </p>
+              </div>
+
+              {/* Puzzle Image Controls */}
+              <div className="md:col-span-8 space-y-4">
+                <div>
+                  <label
+                    htmlFor="puzzle-image-url-input"
+                    className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
+                  >
+                    Selected Photograph URL
+                  </label>
+                  <input
+                    id="puzzle-image-url-input"
+                    type="text"
+                    value={draftContent.puzzleImageUrl || ''}
+                    onChange={(e) =>
+                      setDraftContent((d) => ({
+                        ...d,
+                        puzzleImageUrl: e.target.value,
+                        puzzleImageFileId: ''
+                      }))
+                    }
+                    placeholder={WEDDING_PHOTOS.story.src}
+                    className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-lg border border-[#07543E]/20 bg-white"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowPuzzlePicker((prev) => !prev)}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                  >
+                    <ImageIcon className="w-4 h-4 text-[#C5A04A]" />
+                    <span>{showPuzzlePicker ? 'Hide Gallery Picker' : 'Select Image'}</span>
+                  </button>
+
+                  <label
+                    htmlFor="admin-puzzle-upload-input"
+                    className={`inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-[#07543E] text-xs font-semibold uppercase tracking-wider ${
+                      puzzleImageUploading ? 'opacity-60 pointer-events-none' : 'cursor-pointer'
+                    }`}
+                  >
+                    {puzzleImageUploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 text-[#C5A04A]" />
+                    )}
+                    <span>
+                      {puzzleImageUploading
+                        ? `Uploading (${puzzleImageProgress}%)...`
+                        : 'Upload New Image'}
+                    </span>
+                  </label>
+                  <input
+                    ref={puzzleFileInputRef}
+                    id="admin-puzzle-upload-input"
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
+                    disabled={puzzleImageUploading}
+                    onChange={(e) => void handleUploadPuzzleImage(e)}
+                    className="sr-only"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPuzzlePreviewModal(true)}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#C5A04A] bg-[#F2EBDD] hover:bg-[#EADFC9] text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>Preview Puzzle</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={savingContent || puzzleImageUploading}
+                    onClick={() => void handleSaveSiteContent(draftContent)}
+                    className="inline-flex items-center justify-center gap-1.5 px-5 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider cursor-pointer sm:ml-auto"
+                  >
+                    {savingContent ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4 text-[#C5A04A]" />
+                    )}
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+
+                {/* Expandable Wedding Photo Picker (Built-in + Uploaded Google Drive Photos) */}
+                {showPuzzlePicker && (
+                  <div className="p-4 rounded-xl bg-white border border-[#07543E]/15 space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#737746]">
+                      Choose From Existing Wedding Photographs
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-72 overflow-y-auto pr-1">
+                      {[
+                        {
+                          key: 'builtin-story',
+                          label: 'Our Story Portrait',
+                          url: WEDDING_PHOTOS.story.src,
+                          fileId: ''
+                        },
+                        {
+                          key: 'builtin-hero',
+                          label: 'Hero Portrait',
+                          url: WEDDING_PHOTOS.hero.src,
+                          fileId: ''
+                        },
+                        {
+                          key: 'builtin-schedule',
+                          label: 'Schedule Portrait',
+                          url: WEDDING_PHOTOS.schedule.src,
+                          fileId: ''
+                        },
+                        {
+                          key: 'builtin-qa',
+                          label: 'Formal Portrait',
+                          url: WEDDING_PHOTOS.qa.src,
+                          fileId: ''
+                        },
+                        ...galleryItems
+                          .filter((item) => item.mediaType === 'image')
+                          .map((item) => ({
+                            key: item.id,
+                            label: item.title || 'Uploaded Photo',
+                            url: item.fileUrl,
+                            fileId: item.driveFileId
+                          }))
+                      ].map((photo) => {
+                        const isSelected =
+                          (draftContent.puzzleImageUrl || WEDDING_PHOTOS.story.src) === photo.url;
+                        return (
+                          <button
+                            key={photo.key}
+                            type="button"
+                            onClick={() => {
+                              setDraftContent((d) => ({
+                                ...d,
+                                puzzleImageUrl: photo.url,
+                                puzzleImageFileId: photo.fileId
+                              }));
+                              setShowPuzzlePicker(false);
+                            }}
+                            className={`group text-left rounded-lg overflow-hidden border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'border-[#07543E] ring-2 ring-[#C5A04A]'
+                                : 'border-[#07543E]/15 hover:border-[#C5A04A]'
+                            }`}
+                          >
+                            <div className="aspect-square bg-[#F2EBDD] overflow-hidden">
+                              <img
+                                src={photo.url}
+                                alt={photo.label}
+                                loading="lazy"
+                                className="w-full h-full object-cover object-[50%_22%] group-hover:scale-105 transition-transform"
+                              />
+                            </div>
+                            <p className="p-2 text-[11px] font-medium text-[#07543E] truncate bg-[#FFFDF8]">
+                              {photo.label}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -2852,6 +3176,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* Interactive Puzzle Preview Modal */}
+      {showPuzzlePreviewModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Wedding Photo Puzzle Preview"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setShowPuzzlePreviewModal(false)}
+        >
+          <div
+            className="relative w-full max-w-2xl bg-[#FAF7F0] rounded-2xl border border-[#C5A04A]/50 p-4 sm:p-6 shadow-2xl my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-[#737746] font-semibold">
+                  Admin Preview
+                </p>
+                <h3 className="font-serif text-2xl font-semibold text-[#07543E]">
+                  Put Our Love Story Together
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPuzzlePreviewModal(false)}
+                aria-label="Close puzzle preview"
+                className="w-11 h-11 rounded-full bg-white border border-[#07543E]/15 hover:bg-[#F2EBDD] text-[#07543E] flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <WeddingPuzzleBoard
+              imageUrl={draftContent.puzzleImageUrl || WEDDING_PHOTOS.story.src}
+              coupleNames={draftContent.coupleNames}
+              isPreviewModal
+            />
+          </div>
         </div>
       )}
     </div>

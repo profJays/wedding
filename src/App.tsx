@@ -220,6 +220,7 @@ export default function App() {
       <Header
         coupleNames={siteContent.coupleNames}
         activeView={view}
+        puzzleEnabled={siteContent.puzzleEnabled !== false}
         onNavigateSection={handleNavigateSection}
         onGoInvitation={handleGoInvitation}
         onGoChallenge={handleGoChallenge}
@@ -303,6 +304,7 @@ export default function App() {
         hashtag={siteContent.hashtag}
         weddingDateDisplay={siteContent.weddingDateDisplay}
         footerNote={siteContent.footerNote}
+        puzzleEnabled={siteContent.puzzleEnabled !== false}
         onNavigateSection={handleNavigateSection}
         onGoInvitation={handleGoInvitation}
         onGoChallenge={handleGoChallenge}

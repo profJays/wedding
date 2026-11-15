@@ -21,6 +21,7 @@ import { SiteContentData } from '../types';
 import { Crest } from './Crest';
 import { RsvpSection } from './RsvpSection';
 import { GallerySection } from './GallerySection';
+import { WeddingPhotoPuzzleSection } from './WeddingPhotoPuzzleSection';
 import {
   buildMapSearchUrl,
   buildDirectionsUrl,
@@ -678,6 +679,16 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           </div>
         </div>
       </section>
+
+      {/* ====================================================================
+          4B. INTERACTIVE 3×3 WEDDING PHOTO PUZZLE (Optional Admin Toggle)
+      ==================================================================== */}
+      {siteContent.puzzleEnabled !== false && (
+        <WeddingPhotoPuzzleSection
+          puzzleImageUrl={siteContent.puzzleImageUrl}
+          coupleNames={siteContent.coupleNames}
+        />
+      )}
 
       {/* ====================================================================
           5. GUEST Q&A SECTION (Soft Cream #F2EBDD)
