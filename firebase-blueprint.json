@@ -1,0 +1,150 @@
+{
+  "entities": {
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Publicly readable, admin-editable wedding website content, schedule, FAQs, and settings.",
+      "type": "object",
+      "properties": {
+        "coupleNames": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "brideName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "groomName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "hashtag": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "weddingDateDisplay": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "ceremonyTargetISO": { "type": "string", "minLength": 10, "maxLength": 40 },
+        "galleryUnlockISO": { "type": "string", "minLength": 10, "maxLength": 40 },
+        "galleryUnlockEpochMs": { "type": "integer" },
+        "mainVenue": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "heroImageUrl": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "contactName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "contactPhone": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "welcomeHeading": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "welcomeParagraphs": { "type": "array" },
+        "welcomeSignOff": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "storyHeading": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "storyParagraphs": { "type": "array" },
+        "coupleQas": { "type": "array" },
+        "scheduleEvents": { "type": "array" },
+        "guestFaqs": { "type": "array" },
+        "footerNote": { "type": "string", "maxLength": 200 },
+        "rsvpOpen": { "type": "boolean" },
+        "maxGuestsPerRsvp": { "type": "integer" },
+        "galleryPublicEnabled": { "type": "boolean" },
+        "themePrimaryHex": { "type": "string", "maxLength": 20 },
+        "themeAccentHex": { "type": "string", "maxLength": 20 },
+        "themeGoldHex": { "type": "string", "maxLength": 20 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedByUid": { "type": "string", "maxLength": 128 }
+      },
+      "required": [
+        "coupleNames",
+        "brideName",
+        "groomName",
+        "hashtag",
+        "weddingDateDisplay",
+        "ceremonyTargetISO",
+        "galleryUnlockISO",
+        "galleryUnlockEpochMs",
+        "mainVenue",
+        "heroImageUrl",
+        "welcomeHeading",
+        "welcomeParagraphs",
+        "welcomeSignOff",
+        "storyHeading",
+        "storyParagraphs",
+        "coupleQas",
+        "scheduleEvents",
+        "guestFaqs",
+        "rsvpOpen",
+        "maxGuestsPerRsvp",
+        "galleryPublicEnabled",
+        "updatedAt",
+        "updatedByUid"
+      ]
+    },
+    "RsvpRecord": {
+      "title": "RsvpRecord",
+      "description": "Guest RSVP submission stored securely with PII restricted to administrators.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "normalizedName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "attending": { "type": "boolean" },
+        "guestCount": { "type": "integer" },
+        "message": { "type": "string", "maxLength": 1000 },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "fullName",
+        "normalizedName",
+        "attending",
+        "guestCount",
+        "message",
+        "submittedAt",
+        "updatedAt"
+      ]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "Metadata for uploaded guest photographs, videos, or admin-added couple media.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "guestName": { "type": "string", "maxLength": 80 },
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "mimeType": { "type": "string", "minLength": 3, "maxLength": 80 },
+        "fileUrl": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "storageProvider": { "type": "string", "enum": ["google_drive", "local_server", "site_asset"] },
+        "driveFileId": { "type": "string", "maxLength": 200 },
+        "sizeBytes": { "type": "integer" },
+        "status": { "type": "string", "enum": ["pending", "approved", "hidden"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "title",
+        "guestName",
+        "mediaType",
+        "mimeType",
+        "fileUrl",
+        "storageProvider",
+        "driveFileId",
+        "sizeBytes",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized administrator registry entries for RBAC checks.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "addedBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["uid", "email", "displayName", "addedAt", "addedBy"]
+    }
+  },
+  "firestore": {
+    "/siteContent/{contentId}": {
+      "schema": { "$ref": "#/entities/SiteContent" },
+      "description": "Website copy, schedule, Q&A, and global wedding site settings."
+    },
+    "/rsvps/{rsvpId}": {
+      "schema": { "$ref": "#/entities/RsvpRecord" },
+      "description": "Wedding guest RSVP submissions; write-once by public guests and readable/manageable only by verified admins."
+    },
+    "/galleryItems/{itemId}": {
+      "schema": { "$ref": "#/entities/GalleryItem" },
+      "description": "Gallery photograph and video metadata; public reads restricted to approved items only."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized wedding administrator UIDs."
+    }
+  }
+}

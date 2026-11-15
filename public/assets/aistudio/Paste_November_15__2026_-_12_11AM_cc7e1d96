@@ -1,0 +1,1078 @@
+# MASTER REFINEMENT PROMPT — MARY & JOSEPH WEDDING WEBSITE
+
+## PROJECT OBJECTIVE
+
+You are working on an existing wedding website application built in Google AI Studio.
+
+Your task is to **refine, redesign, correct, and complete the existing application**, not create an entirely new project.
+
+The current application already contains:
+- An animated digital wedding invitation.
+- A wedding challenge/quiz.
+- A guest approval screen.
+- A rejection screen for selecting the prohibited white dress option.
+- An existing wedding website.
+- Four wedding photographs.
+- A countdown component.
+- Existing navigation and reusable React components.
+
+Preserve the working features while significantly improving the visual design, correcting the website's content, and implementing the missing functionality.
+
+The final result should be a beautiful, elegant, fully functional, mobile-first wedding website for:
+
+**Mary & Joseph**
+
+**Wedding hashtag: #mjay2026**
+
+**Wedding date: Saturday, 12 December 2026**
+
+The original WithJoy website is the content reference:
+
+https://withjoy.com/joseph-and-damilola/
+
+The complete and authoritative wedding text is included in this prompt. Use it instead of the invented content currently in the application.
+
+---
+
+# PART 1 — FIRST INSPECT THE EXISTING PROJECT
+
+Before making changes, inspect the entire existing codebase.
+
+Pay particular attention to:
+
+- `src/App.tsx`
+- `src/data/weddingSite.ts`
+- `src/data/questions.ts`
+- `src/types.ts`
+- `src/index.css`
+- `src/components/InvitationScreen.tsx`
+- `src/components/WelcomeScreen.tsx`
+- `src/components/QuizScreen.tsx`
+- `src/components/ApprovedScreen.tsx`
+- `src/components/UninvitedScreen.tsx`
+- `src/components/DressCodeModal.tsx`
+- `src/components/Header.tsx`
+- `src/components/Footer.tsx`
+- `src/components/WeddingWebsite.tsx`
+- `public/images/wedding/`
+
+Understand how the existing application works before modifying its architecture.
+
+Do not blindly replace the application with a new template.
+
+### Preserve these existing features
+
+1. The invitation opening experience.
+2. The existing invitation artwork and animation.
+3. The wedding challenge and its questions.
+4. The quiz navigation and answer-selection logic.
+5. The white-dress rejection mechanism.
+6. The approved/guest approval screen.
+7. The ability to restart the challenge.
+8. Existing photographs and image assets.
+9. The current application entry point and working deployment configuration.
+
+You may improve their presentation, responsiveness, accessibility and performance, but do not remove working functionality.
+
+The invitation and challenge should continue to lead into the main wedding website.
+
+The intended experience is:
+
+**Digital Invitation → Wedding Challenge → Guest Approval → Complete Wedding Website**
+
+Guests must also be able to explore the main wedding website without being trapped in the challenge flow.
+
+---
+
+# PART 2 — CORRECT THE WEDDING IDENTITY
+
+There is an important identity correction.
+
+The original WithJoy website displays Joseph & Damilola. The new website must display:
+
+- Bride: Mary
+- Groom: Joseph
+- Couple: Mary & Joseph
+- Hashtag: #mjay2026
+- Wedding date: Saturday, 12 December 2026
+
+Update all relevant references throughout the application.
+
+This includes:
+- Browser page title.
+- Meta descriptions.
+- Navigation.
+- Invitation.
+- Challenge screens.
+- Approval screen.
+- Website headings.
+- Footer.
+- Image captions where appropriate.
+- Gallery.
+- Admin dashboard.
+- Generated sharing previews.
+
+Do not leave Damilola or the old hashtag anywhere in the new public-facing experience.
+
+Use the timezone `Africa/Lagos` for all wedding dates and countdown calculations.
+
+---
+
+# PART 3 — ESTABLISH A STRICT CONTENT SOURCE OF TRUTH
+
+This is one of the most important requirements.
+
+The current application contains AI-generated wedding stories, memories, questions and answers that were never supplied by the couple.
+
+Remove all such invented content.
+
+The text below is the authoritative wedding content. Preserve the wording, meaning, names, dates, times, locations and answers exactly.
+
+You may adjust typography, line breaks and presentation, but do not rewrite the couple's story or manufacture additional information.
+
+Do not add:
+- Invented memories.
+- Invented travel experiences.
+- Invented honeymoon destinations.
+- Invented wedding traditions.
+- Invented event locations.
+- Invented dress codes.
+- Invented accommodation information.
+- Invented RSVP deadlines.
+- Invented answers to guest questions.
+- Generic wedding quotations presented as the couple's own words.
+
+If information is missing, display an appropriate neutral message or leave that optional information out.
+
+## 3.1 MAIN NAVIGATION
+
+The main navigation should contain:
+
+- Welcome
+- Our Story
+- Schedule
+- Q&A
+
+Additional functional sections may include:
+
+- RSVP
+- Gallery
+
+These additional sections should complement the original website rather than replace its original structure.
+
+## 3.2 WELCOME SECTION
+
+<PRIVATE_PERSON> & Joseph
+
+Saturday, 12 December 2026
+
+Ivana Events and Amusement Center, Abuja-Keffi Road, Abuja, Nigeria, Nasarawa
+
+Display a live countdown to the wedding date.
+
+### Welcome to Our Love Story
+
+Every great love story is made even more beautiful by the people who share in it, and we are incredibly grateful that you're here to celebrate ours.
+
+As we begin this new chapter together, our hearts are filled with joy knowing we'll be surrounded by the love, laughter, and blessings of our family and friends.
+
+Thank you for being part of our journey and for making our happiest day even more unforgettable.
+
+With all our love,
+
+The Bride & Groom
+
+Replace the placeholder `<PRIVATE_PERSON>` above with **Mary**, so the actual heading reads **Mary & Joseph**.
+
+## 3.3 OUR STORY SECTION
+
+### Our Story
+
+They say love finds you when you least expect it—and for us, it began in the most unexpected place: a fashion house in Abuja.
+
+What started as a simple meeting soon turned into effortless conversations, shared laughter, and a friendship that neither of us saw coming. With every visit, every conversation, and every moment spent together, we discovered that the best things in life are often beautifully unplanned.
+
+Somewhere between fabrics, fittings, and dreams being stitched together, God was quietly weaving our own love story. What began as strangers crossing paths became two hearts finding home in each other.
+
+Today, we're grateful for that unexpected beginning and even more excited for the beautiful forever that lies ahead.
+
+### Couple Questions and Answers
+
+**How did you two meet?**
+
+See Our Story!
+
+**Who made the first move?**
+
+You guessed right - him!. He is a sharpshooter who knows what he want.
+
+**Who said "I love you" first?**
+
+I did all the right things that triggered "I love you" from her. 💞😋
+
+**Who takes out the rubbish?**
+
+Whoever's nearest the bin :)
+
+**Who is more likely to cry during the wedding?**
+
+Her siblings. They will miss her so much. 😎
+
+**If you could relive one day together, which would it be?**
+
+One particular Ice Cream date 🤐
+
+**What are you most looking forward to after the wedding?**
+
+Counting the money we get as gifts 🤣😋
+
+IMPORTANT: These are the exact answers supplied by the couple. Do not substitute the answers currently in `weddingSite.ts`.
+
+## 3.4 SCHEDULE SECTION
+
+Display the events in chronological order.
+
+The schedule must be easy to understand, especially on mobile devices.
+
+### FRIDAY, 11 DECEMBER 2026
+
+**Time:** 14:30
+
+**Traditional Wedding / Engagement**
+
+**Location:** City College Rd, Ado, Nigeria
+
+**Dress code:** Traditional Attire
+
+**Colours of the day:** White, Burnt Orange, and Emerald Green.
+
+**Description:**
+
+We would love to have you at our Traditional Wedding and Engagement Party.
+
+Provide:
+- A map/location link.
+- Directions.
+- Add to Calendar functionality.
+
+Do not invent a hotel or accommodation recommendation. Where to Stay may be displayed as a section only if genuine accommodation information is supplied later.
+
+### SATURDAY, 12 DECEMBER 2026
+
+**10:00 to 12:00**
+
+**⛪ Join Us at the Altar - Church Wedding!**
+
+**Venue:**
+
+Alafia Oluwa Baptist Church, along Karu market, 2J2Q+PCG, junction, Ado 961105, Nasarawa, Nigeria
+
+**Description:**
+
+We'd be honored to have you witness the moment we exchange our vows and become one before God. Your presence, prayers, and blessings will make this sacred occasion even more meaningful.
+
+Provide:
+- Map/location link.
+- Directions.
+- Add to Calendar functionality.
+
+### SATURDAY, 12 DECEMBER 2026
+
+**13:00**
+
+**🥂 Celebrate With Us - The Reception!**
+
+**Venue:**
+
+Ivana Events and Amusement Center
+
+**Dress code:** Elegant Style
+
+**Description:**
+
+After we say "I do," the celebration begins!
+
+Join us for an unforgettable evening of love, laughter, music, delicious food, and joyful dancing as we celebrate the start of our forever.
+
+Provide:
+- Map/location link.
+- Directions.
+- Add to Calendar functionality.
+
+IMPORTANT SCHEDULE RULES:
+
+- Do not change the event dates or times.
+- Do not move the reception to a different date.
+- Do not invent an address for the church.
+- Do not invent a different reception venue.
+- Keep the traditional wedding separate from the church wedding and reception.
+- The traditional wedding is on Friday; the church wedding and reception are on Saturday.
+- Use the timezone Africa/Lagos when generating calendar events.
+
+For maps, use the actual venue addresses and map search links. Do not fabricate precise coordinates.
+
+## 3.5 Q&A SECTION
+
+Display the following questions and answers exactly.
+
+**If you've got any questions, have a look at our Q & A section first!**
+
+**What time should I arrive?**
+
+We recommend arriving 10–20 minutes before the ceremony to allow enough time for seating before the service begins because we intend to keep to time.
+
+**Will food and drinks be served?**
+
+Absolutely! Come hungry and ready to enjoy a delicious meal, refreshing drinks, and plenty of cake!
+
+**Is there a dress code?**
+
+Come dressed to celebrate!
+
+Our colors are White, Burnt Orange, and Emerald Green.
+
+**Can I take photos during the ceremony?**
+
+Feel free to capture moments before and after the ceremony. During the vows, we kindly ask that you allow our professional photographers to do their work so everyone can enjoy the moment.
+
+**What if I can't make it?**
+
+We'll miss celebrating with you, but we completely understand. Thanks for sending your gifts in advance 🥰
+
+**Will the ceremony and reception be at the same venue?**
+
+No. The church ceremony and reception will take place at different venues. Please check the Schedule section for addresses and directions.
+
+**How can I share the photos I take?**
+
+We'd love to see the day through your eyes! Please upload your photos and videos using the Gallery section on this website.
+
+**Who should I get in touch with if I have questions?**
+
+If you've got any questions, just get in touch with our lovely Maid of Honour, Victoria, on +2348031234567.
+
+Do not add any of the fabricated FAQs currently in the project.
+
+---
+
+# PART 4 — REDESIGN THE WEBSITE
+
+The current website needs a more refined, sophisticated and intentional design.
+
+I want a luxury editorial wedding aesthetic.
+
+Think of a carefully art-directed wedding invitation and high-end wedding publication rather than a generic wedding template.
+
+### Design direction
+
+The design should feel:
+- Elegant.
+- Romantic.
+- Warm.
+- Minimal.
+- Premium.
+- Personal.
+- Modern.
+- Timeless.
+
+Avoid making it look like a generic AI-generated wedding website.
+
+### Colour palette
+
+Use these colours as the primary design system:
+
+| Colour | Hex | Usage |
+|---|---|---|
+| Deep Emerald | #07543E | Primary brand colour |
+| Dark Forest Green | #073B2B | Deep backgrounds and accents |
+| Olive Green | #737746 | Secondary accents |
+| Warm Gold | #C5A04A | Fine details and highlights |
+| Ivory | #FAF7F0 | Main page background |
+| Soft Cream | #F2EBDD | Alternate section backgrounds |
+| Dark Charcoal | #262820 | Main body text |
+
+Gold should be used sparingly.
+
+Do not make every section green or gold.
+
+Use warm ivory and cream as the main backgrounds, with emerald green for strong visual anchors.
+
+### Typography
+
+Use a refined combination of:
+
+- Cormorant Garamond for elegant headings.
+- Pinyon Script or a similar tasteful calligraphy font for selected decorative elements.
+- A clean, readable sans-serif font for body text and interface elements.
+
+Do not overuse script fonts.
+
+All text must remain readable on small screens.
+
+### Layout and visual treatment
+
+Redesign the website using:
+
+1. Generous whitespace.
+2. Beautiful, well-cropped photography.
+3. Large editorial headings.
+4. Delicate gold dividers.
+5. Subtle transitions.
+6. Carefully aligned content.
+7. Minimal decorative elements.
+8. Consistent spacing.
+9. Elegant section transitions.
+10. A polished footer.
+
+Avoid:
+- Too many rounded cards.
+- Excessive borders.
+- Heavy shadows.
+- Excessive gold decorations.
+- Unnecessary badges.
+- Too many floating elements.
+- Oversized decorative icons.
+- Excessive animations.
+- Artificially generated captions.
+- Unnecessary gradients.
+
+The website should look sophisticated without feeling overdesigned.
+
+## 4.1 HERO / WELCOME DESIGN
+
+Make the homepage visually impressive.
+
+The couple's photograph should be one of the most prominent elements.
+
+Display:
+
+MARY & JOSEPH
+
+#MJAY2026
+
+Saturday, 12 December 2026
+
+The wedding location.
+
+Include the live countdown.
+
+The hero should have a clear visual hierarchy and should not be crowded with too much text.
+
+Use the existing `hero-couple.jpg` photograph.
+
+Do not replace the existing couple's photographs with AI-generated people.
+
+Do not alter the couple's facial features or identity.
+
+## 4.2 OUR STORY DESIGN
+
+Present the story as a beautiful editorial section.
+
+Use the existing `story-couple.jpg` photograph.
+
+The text should be comfortable to read, with appropriate line spacing and paragraph width.
+
+Present the seven couple questions as a refined interactive accordion or alternating editorial question-and-answer layout.
+
+Do not make the section look like a generic FAQ page.
+
+Remove captions such as:
+- Fig. 1 — Candid moment together.
+- Fig. 2 — Ivana Events & Amusement Center.
+- Fig. 3 — Formal portrait of the couple.
+
+Use photographs naturally, without artificial academic-style labels.
+
+## 4.3 SCHEDULE DESIGN
+
+Use an elegant chronological timeline.
+
+Separate Friday and Saturday clearly.
+
+Each event should display:
+- Date.
+- Time.
+- Event name.
+- Venue.
+- Description.
+- Dress code, where provided.
+- Map link.
+- Directions link.
+- Add to Calendar action.
+
+The schedule should be easy to scan.
+
+On mobile, the events should stack vertically.
+
+Do not use large, bulky cards for every event.
+
+## 4.4 Q&A DESIGN
+
+Use a clean accordion interface.
+
+Each question should expand smoothly when selected.
+
+Only the supplied eight questions should appear.
+
+Ensure the accordion is accessible by keyboard and screen readers.
+
+## 4.5 RESPONSIVE DESIGN
+
+The website must work beautifully on:
+- Mobile phones.
+- Tablets.
+- Laptops.
+- Desktop screens.
+
+Mobile-first design is particularly important.
+
+Check:
+- Navigation behaviour.
+- Image cropping.
+- Text wrapping.
+- Buttons.
+- Forms.
+- Gallery layout.
+- Accordion interactions.
+- Countdown.
+- Invitation animation.
+- Challenge screens.
+
+No horizontal scrolling should occur.
+
+---
+
+# PART 5 — PHOTOGRAPH MANAGEMENT
+
+The ZIP already contains these photographs:
+
+- `public/images/wedding/hero-couple.jpg`
+- `public/images/wedding/story-couple.jpg`
+- `public/images/wedding/schedule-venue.jpg`
+- `public/images/wedding/qa-couple.jpg`
+
+Preserve these image files.
+
+Use them appropriately throughout the website.
+
+Do not:
+- Delete them.
+- Replace them with unrelated stock images.
+- Replace them with AI-generated couples.
+- Distort their proportions.
+- Crop faces carelessly.
+- Add misleading captions.
+
+Use responsive image sizing and appropriate object positioning.
+
+If you need additional images, make them optional and manageable through the admin dashboard.
+
+The site should remain attractive even if no additional photographs are uploaded.
+
+---
+
+# PART 6 — IMPLEMENT THE GUEST RSVP SYSTEM
+
+The current application does not have a fully implemented RSVP backend.
+
+Implement a real RSVP system.
+
+Guests should be able to submit their attendance response directly through the wedding website.
+
+### RSVP form
+
+Include:
+
+- Full name.
+- Attendance response: Attending / Unable to attend.
+- Number of guests, where applicable.
+- Optional message to the couple.
+
+Do not invent an RSVP deadline.
+
+Do not assume every guest is entitled to a plus-one.
+
+If guest limits are introduced, they must be configurable by the administrator.
+
+### RSVP functionality
+
+When a guest submits the form:
+
+1. Validate the form.
+2. Save the response to the database.
+3. Display a clear success message.
+4. Prevent accidental duplicate submissions where possible.
+5. Record submission date and time.
+6. Store the information securely.
+7. Make the response visible in the admin dashboard.
+
+The admin should be able to:
+- View all RSVP records.
+- Search by guest name.
+- Filter attending and not attending.
+- View total responses.
+- View total confirmed attendees.
+- Export RSVP records to CSV.
+- Edit or delete a record when necessary.
+
+Do not create a fake form that simply displays a success message without saving the information.
+
+---
+
+# PART 7 — IMPLEMENT THE GUEST PHOTO AND VIDEO GALLERY
+
+Create a dedicated Gallery section.
+
+This section should allow guests to upload photographs and videos from the wedding.
+
+However, the upload functionality must remain locked until:
+
+**Saturday, 12 December 2026, 00:00 West Africa Time.**
+
+Use the actual server-side time and the Africa/Lagos timezone when enforcing the restriction.
+
+Do not rely solely on a browser-side countdown to protect uploads.
+
+### Before the wedding
+
+Display:
+- A beautiful gallery introduction.
+- A countdown to the upload opening time.
+- A clear message explaining that guests will be able to upload their photographs and videos on the wedding day.
+- An attractive locked upload interface.
+
+Suggested message:
+
+"Help us relive our special day through your eyes. Our guest photo gallery will open on 12 December 2026. Come back on the wedding day to share your favourite moments with us!"
+
+### On the wedding date
+
+Automatically unlock the upload functionality.
+
+Guests should be able to:
+- Select photographs.
+- Select videos.
+- Upload multiple files.
+- See upload progress.
+- Receive a success or error message.
+
+Validate:
+- File type.
+- File size.
+- Upload permissions.
+- File count.
+- Storage limits.
+
+Prevent unauthorised uploads to arbitrary storage locations.
+
+### Gallery display
+
+Uploaded photographs should be displayed in a beautiful responsive gallery.
+
+Include:
+- Masonry or editorial grid layout.
+- Full-screen image viewing.
+- Video playback where supported.
+- Upload date.
+- Optional guest name.
+
+Allow the administrator to:
+- View uploads.
+- Approve or hide uploads before public display.
+- Delete inappropriate files.
+- Download individual files.
+- Manage the gallery.
+
+Use Google Drive for media storage if a secure and supported integration is available.
+
+Do not expose Google Drive credentials, OAuth tokens or service-account keys in frontend code.
+
+If Drive integration cannot be completed with the available permissions, implement a clearly documented storage abstraction and report what setup is still required.
+
+---
+
+# PART 8 — IMPLEMENT A PRIVATE ADMIN DASHBOARD
+
+Create an administrative dashboard that is accessible only to authorised administrators.
+
+It must not be accessible simply by guessing a URL.
+
+Use proper authentication.
+
+### Dashboard sections
+
+**1. Overview**
+
+Display:
+- Total RSVP submissions.
+- Confirmed attendees.
+- Guests unable to attend.
+- Total uploaded photographs.
+- Total uploaded videos.
+- Recent activity.
+
+**2. Website Content**
+
+Allow administrators to edit:
+- Welcome text.
+- Our Story.
+- Couple questions and answers.
+- Wedding schedule.
+- Event descriptions.
+- Dress codes.
+- Venue details.
+- Q&A content.
+- Footer information.
+
+The content should be saved to the database and reflected on the public website.
+
+**3. RSVP Management**
+
+Allow administrators to:
+- View submissions.
+- Search.
+- Filter.
+- Export CSV.
+- Edit records.
+- Delete records.
+
+**4. Gallery Management**
+
+Allow administrators to:
+- View submitted photographs.
+- View videos.
+- Approve or hide media.
+- Delete media.
+- Download media.
+- Manage gallery visibility.
+
+**5. Site Settings**
+
+Allow administrators to manage:
+- Couple names.
+- Wedding hashtag.
+- Wedding date.
+- Countdown settings.
+- Gallery unlock date.
+- Main wedding venue.
+- Contact information.
+- Theme colours.
+- Homepage image.
+
+Important: The couple's names and wedding date should have sensible defaults. Changing the date should also update the countdown and gallery unlock logic where appropriate.
+
+Do not allow public visitors to modify website content.
+
+---
+
+# PART 9 — DATABASE AND GOOGLE DRIVE ARCHITECTURE
+
+The project currently does not contain a complete database or media-storage implementation.
+
+Implement a proper backend.
+
+Preferred architecture:
+
+### Firebase Authentication
+
+Use Firebase Authentication for administrator access.
+
+### Firestore
+
+Use Firestore to store:
+- Website content.
+- Wedding schedule.
+- Q&A.
+- Couple questions.
+- RSVP records.
+- Gallery metadata.
+- Site settings.
+- Administrator information.
+
+### Google Drive
+
+Use Google Drive for:
+- Wedding photographs.
+- Guest-uploaded photographs.
+- Guest-uploaded videos.
+- Other media assets.
+
+### Security requirements
+
+- Never expose secret keys in frontend code.
+- Never hardcode private credentials.
+- Use environment variables or the platform's secure secrets manager.
+- Apply appropriate Firestore security rules.
+- Protect administrative routes.
+- Validate uploads on the server.
+- Restrict file types and sizes.
+- Prevent unauthorised data access.
+- Avoid publicly exposing guest contact information.
+
+If Firebase is not configured in the existing Google AI Studio environment, guide the setup using the available integration.
+
+Do not pretend that Firebase or Google Drive is connected when it is not.
+
+If additional credentials or authorisation are needed, clearly identify the exact setup steps.
+
+The application must remain usable for its existing public wedding experience even while optional backend integrations are being configured.
+
+---
+
+# PART 10 — LIVE COUNTDOWN
+
+Implement a dynamic countdown to:
+
+**12 December 2026 at 10:00 AM, Africa/Lagos time.**
+
+Display:
+- Days.
+- Hours.
+- Minutes.
+- Seconds.
+
+The countdown must update automatically.
+
+Do not hardcode a countdown value such as "27 days".
+
+Calculate the difference between the current time and the target date.
+
+When the wedding date arrives, display an appropriate wedding-day message instead of negative numbers.
+
+The gallery unlock countdown is separate: it must reach zero at midnight on 12 December 2026, not at the 10:00 AM ceremony time.
+
+Use the Africa/Lagos timezone consistently.
+
+---
+
+# PART 11 — NAVIGATION AND USER EXPERIENCE
+
+The complete public website should be easy to navigate.
+
+The navigation should include:
+
+- Welcome.
+- Our Story.
+- Schedule.
+- Q&A.
+- RSVP.
+- Gallery.
+
+On mobile, use a clean collapsible navigation menu.
+
+Make sure all navigation links work.
+
+The invitation and challenge must remain accessible without preventing visitors from accessing the main wedding website.
+
+Add a clear way to return to the main website from the invitation and challenge screens.
+
+Add appropriate loading states, error states, empty states and success messages.
+
+Do not leave buttons that look interactive but do nothing.
+
+---
+
+# PART 12 — TECHNICAL QUALITY AND PERFORMANCE
+
+Maintain the existing React, TypeScript and Vite application unless a genuine technical reason requires an architectural change.
+
+Avoid unnecessary dependency additions.
+
+Use reusable components.
+
+Keep content data separate from presentation.
+
+Keep backend functionality separate from frontend components.
+
+Use proper TypeScript types.
+
+Ensure:
+- No TypeScript errors.
+- No broken imports.
+- No missing assets.
+- No console errors.
+- No non-functional buttons.
+- No broken navigation.
+- No duplicate IDs.
+- No insecure public administrative access.
+- No hardcoded fake data presented as real submissions.
+- No broken mobile layouts.
+
+Optimise image loading and use lazy loading where appropriate.
+
+Use semantic HTML and accessible controls.
+
+Ensure that all important page content is searchable and indexable where appropriate.
+
+Update the page title, favicon and social-sharing metadata to reflect Mary & Joseph.
+
+---
+
+# PART 13 — IMPORTANT CONTENT AND DESIGN RESTRICTIONS
+
+These instructions override any previous AI-generated content or assumptions in the project.
+
+1. Never invent information about Mary and Joseph.
+2. Never replace the supplied love story with an alternative.
+3. Never invent couple memories.
+4. Never invent additional FAQ answers.
+5. Never invent wedding dates or event times.
+6. Never invent venue addresses.
+7. Never invent accommodation details.
+8. Never invent an RSVP deadline.
+9. Never replace the couple's photographs with unrelated AI-generated people.
+10. Never remove the existing invitation and wedding challenge.
+11. Never expose administrator credentials.
+12. Never claim an upload or RSVP has been saved unless it has actually been saved.
+13. Never show fake RSVP submissions or fake guest uploads.
+14. Never silently discard existing working features.
+15. Never use placeholder content on the final public-facing website.
+
+If a requested feature cannot be fully implemented because an external service requires configuration, explain the limitation and leave the feature in a clearly identifiable setup state rather than pretending it works.
+
+---
+
+# PART 14 — REQUIRED IMPLEMENTATION WORKFLOW
+
+Do not attempt to make all changes blindly in one pass.
+
+Work through these stages.
+
+### PHASE 1 — CONTENT CORRECTION
+
+- Correct all names and hashtags.
+- Replace the invented love story.
+- Replace the invented couple questions and answers.
+- Replace the invented FAQs.
+- Correct all schedule information.
+- Remove fabricated accommodation and travel information.
+- Check the complete website for remaining invented wedding content.
+
+### PHASE 2 — VISUAL REDESIGN
+
+- Redesign the homepage.
+- Refine typography.
+- Refine colour usage.
+- Improve image placement.
+- Redesign the Our Story section.
+- Redesign the schedule.
+- Redesign the Q&A.
+- Improve mobile responsiveness.
+- Preserve the invitation and challenge.
+
+### PHASE 3 — RSVP AND DATABASE
+
+- Configure Firebase where available.
+- Implement RSVP submission.
+- Implement secure database storage.
+- Implement administrative access.
+- Implement RSVP management.
+
+### PHASE 4 — GALLERY AND MEDIA STORAGE
+
+- Implement the gallery interface.
+- Implement the server-side upload lock.
+- Implement the wedding-day countdown.
+- Implement Google Drive storage if credentials and permissions permit.
+- Implement media moderation.
+
+### PHASE 5 — ADMIN DASHBOARD
+
+- Implement the dashboard.
+- Implement content editing.
+- Implement schedule editing.
+- Implement Q&A editing.
+- Implement RSVP management.
+- Implement gallery management.
+- Implement site settings.
+
+### PHASE 6 — TESTING
+
+Test the complete experience:
+
+**Invitation**
+- Opens correctly.
+- Animation works.
+- Continue action works.
+- Explore website action works.
+
+**Challenge**
+- Questions load.
+- Answers can be selected.
+- Next and back buttons work.
+- White dress rejection works.
+- Retry works.
+- Approval screen works.
+
+**Website**
+- All navigation links work.
+- Content matches the supplied text.
+- Images display correctly.
+- Countdown works.
+- Mobile layout works.
+
+**RSVP**
+- Form validates.
+- Submission saves.
+- Success message appears.
+- Dashboard displays records.
+- CSV export works.
+
+**Gallery**
+- Upload remains locked before the wedding date.
+- Upload opens automatically at the correct time.
+- Files are validated.
+- Uploads are saved.
+- Gallery displays approved uploads.
+- Admin can moderate media.
+
+**Admin**
+- Authentication works.
+- Unauthorised visitors cannot access the dashboard.
+- Content edits save correctly.
+- Changes appear on the public website.
+
+Run the production build and fix all errors before considering the work complete.
+
+---
+
+# PART 15 — FINAL EXPECTED RESULT
+
+The final application should feel like a premium, professionally designed wedding experience.
+
+It should combine:
+
+1. A beautiful animated digital invitation.
+2. The existing interactive wedding challenge.
+3. A refined wedding homepage.
+4. The authentic Mary and Joseph love story.
+5. The complete wedding schedule.
+6. The original Q&A.
+7. A working RSVP system.
+8. A wedding-day guest photo and video gallery.
+9. A private administrative dashboard.
+10. Secure database and media storage.
+
+The finished website must be easy to maintain without requiring the couple to edit source code.
+
+**MOST IMPORTANT:**
+
+Prioritise accuracy, elegance, functionality and preservation of existing work.
+
+Do not simply make the website look more elaborate.
+
+Make it feel more intentional, more personal, more beautiful and genuinely useful to wedding guests.
+
+Before finishing, provide a clear implementation report showing:
+
+- What was changed.
+- What existing features were preserved.
+- What functionality is fully implemented.
+- What external integrations are connected.
+- What still requires credentials or configuration.
+- What tests were performed.
+- Any known limitations.
+
+Do not declare the project complete if essential functionality is only simulated or visually represented.
+
+Begin by inspecting the existing project and then execute the refinement systematically.

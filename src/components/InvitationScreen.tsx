@@ -4,6 +4,7 @@ import { Crest } from './Crest';
 
 interface InvitationScreenProps {
   onContinue: () => void;
+  onExploreWebsite: () => void;
 }
 
 type EnvelopePhase = 'sealed' | 'breaking' | 'opened';
@@ -95,7 +96,10 @@ const BotanicalPatternSvg: React.FC<{ side: 'left' | 'right' }> = ({ side }) => 
   );
 };
 
-export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }) => {
+export const InvitationScreen: React.FC<InvitationScreenProps> = ({
+  onContinue,
+  onExploreWebsite
+}) => {
   const [phase, setPhase] = useState<EnvelopePhase>('sealed');
   const [isLeaving, setIsLeaving] = useState(false);
 
@@ -243,9 +247,9 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
                 <Crest size="md" />
               </div>
 
-              {/* #MJ2026 Tag */}
-              <span className="font-mono text-[11px] font-semibold tracking-[0.26em] uppercase text-[#556B2F] mb-2">
-                #MJ2026
+              {/* #mjay2026 Tag */}
+              <span className="font-mono text-[11px] font-semibold tracking-[0.26em] text-[#556B2F] mb-2">
+                #mjay2026
               </span>
 
               {/* Exact Required Message: "YOU ARE CORDIALLY INVITED" */}
@@ -253,9 +257,9 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
                 YOU ARE CORDIALLY INVITED
               </p>
 
-              {/* Exact Required Couple Title: "Joseph & Damilola" */}
+              {/* Couple Title: "Mary & Joseph" */}
               <h1 className="font-serif text-4xl sm:text-5xl font-bold tracking-wide text-[#0F5132] leading-tight mb-3">
-                Joseph <span className="font-script text-[#C59B27] font-normal text-4xl sm:text-5xl">&amp;</span> Damilola
+                Mary <span className="font-script text-[#C59B27] font-normal text-4xl sm:text-5xl">&amp;</span> Joseph
               </h1>
 
               {/* Gold Divider */}
@@ -266,7 +270,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
               </div>
 
               {/* Exact Required Sub-Message */}
-              <p className="font-serif italic text-base sm:text-lg text-[#18261D]/85 leading-relaxed max-w-xs sm:max-w-sm mb-7">
+              <p className="font-serif italic text-base sm:text-lg text-[#18261D]/85 leading-relaxed max-w-xs sm:max-w-sm mb-6">
                 Before you explore our celebration, we have a little challenge for you!
               </p>
 
@@ -280,6 +284,15 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
                 <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-[#F3E5AB]/25 to-transparent skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
                 <span>CONTINUE</span>
                 <ArrowRight className="w-4 h-4 text-[#F3E5AB] group-hover:translate-x-1 transition-transform" />
+              </button>
+
+              <button
+                type="button"
+                onClick={onExploreWebsite}
+                disabled={!isFlapsOpen}
+                className="mt-3 text-xs font-medium text-[#0F5132]/80 hover:text-[#0F5132] underline underline-offset-4 cursor-pointer transition-colors"
+              >
+                Or skip straight to the Wedding Website
               </button>
             </div>
           </div>
@@ -372,16 +385,16 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
                   Wedding Celebration
                 </p>
                 <p className="font-serif italic text-lg sm:text-xl text-[#FCF6BA] tracking-wide drop-shadow">
-                  Joseph &amp; Damilola
+                  Mary &amp; Joseph
                 </p>
               </div>
 
-              {/* CENTRAL CLICKABLE GOLD WAX SEAL (#MJ2026) */}
+              {/* CENTRAL CLICKABLE GOLD WAX SEAL (#mjay2026) */}
               <div className="pointer-events-auto flex flex-col items-center">
                 <button
                   type="button"
                   onClick={handleOpenEnvelope}
-                  aria-label="Tap the #MJ2026 gold wax seal to open your wedding invitation"
+                  aria-label="Tap the #mjay2026 gold wax seal to open your wedding invitation"
                   className={`group relative w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center rounded-full cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#F3E5AB]/70 transition-transform active:scale-95 ${
                     phase === 'breaking'
                       ? 'animate-seal-break pointer-events-none'
@@ -448,11 +461,11 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
                     />
                   </svg>
 
-                  {/* Embossed #MJ2026 Text & Subtle Ornamental Detail Inside Seal */}
+                  {/* Embossed #mjay2026 Text & Subtle Ornamental Detail Inside Seal */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none">
                     <span className="h-[1px] w-8 bg-gradient-to-r from-transparent via-[#FFF2B2]/80 to-transparent mb-1" />
-                    <span className="font-serif text-lg sm:text-xl font-bold tracking-[0.09em] text-[#FFF8DC] drop-shadow-[0_1px_2px_rgba(65,42,3,0.9)]">
-                      #MJ2026
+                    <span className="font-serif text-base sm:text-lg font-bold tracking-[0.06em] text-[#FFF8DC] drop-shadow-[0_1px_2px_rgba(65,42,3,0.9)]">
+                      #mjay2026
                     </span>
                     <span className="mt-1 h-[1px] w-8 bg-gradient-to-r from-transparent via-[#FFF2B2]/80 to-transparent" />
                   </div>
@@ -460,10 +473,19 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({ onContinue }
               </div>
 
               {/* Bottom Instruction Prompt */}
-              <div className="text-center">
+              <div className="text-center space-y-2 pointer-events-auto">
                 <p className="inline-block px-4 py-1.5 rounded-full bg-[#031B10]/70 border border-[#D4AF37]/40 font-sans text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-[#F3E5AB] shadow-md backdrop-blur-xs">
                   TAP THE SEAL TO OPEN YOUR INVITATION
                 </p>
+                <div>
+                  <button
+                    type="button"
+                    onClick={onExploreWebsite}
+                    className="text-[11px] text-[#F3E5AB]/80 hover:text-[#FCF6BA] underline underline-offset-4 cursor-pointer"
+                  >
+                    Return to Wedding Website
+                  </button>
+                </div>
               </div>
             </div>
           )}

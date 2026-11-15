@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { 
   Sparkles, 
-  ExternalLink, 
   RotateCcw, 
   CheckCircle, 
   Heart, 
@@ -17,12 +16,14 @@ interface ApprovedScreenProps {
   guestName: string;
   answers: Record<number, string>;
   onPlayAgain: () => void;
+  onExploreWebsite: () => void;
 }
 
 export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
   guestName,
   answers,
-  onPlayAgain
+  onPlayAgain,
+  onExploreWebsite
 }) => {
   const [copied, setCopied] = useState(false);
   const displayName = guestName.trim() || 'Honored Guest';
@@ -80,11 +81,11 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
   const primaryPersona = tags[1] || tags[0] || 'Celebrated Guest';
 
   const handleShare = async () => {
-    const shareText = `I just took The Joseph & Damilola Wedding Challenge (#MJ2026) and got officially approved as a "${primaryPersona}"! Check if you're wedding-ready: ${window.location.href}`;
+    const shareText = `I just took The Mary & Joseph Wedding Challenge (#mjay2026) and got officially approved as a "${primaryPersona}"! Check if you're wedding-ready: ${window.location.href}`;
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'The Joseph & Damilola Wedding Challenge',
+          title: 'The Mary & Joseph Wedding Challenge',
           text: shareText,
           url: window.location.href
         });
@@ -123,9 +124,9 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
         </div>
 
         {/* Clean Unboxed Status Kicker */}
-        <div className="inline-flex items-center gap-1.5 text-[#556B2F] text-[11px] sm:text-xs font-bold tracking-widest uppercase mb-2">
+        <div className="inline-flex items-center gap-1.5 text-[#556B2F] text-[11px] sm:text-xs font-bold tracking-widest mb-2">
           <Award className="w-3.5 h-3.5 text-[#D4AF37]" />
-          <span>#MJ2026 Etiquette Test · 100% Passed</span>
+          <span>#mjay2026 Etiquette Test · 100% Passed</span>
         </div>
 
         {/* Exact required headline */}
@@ -135,15 +136,15 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
 
         {/* Exact required phrasing */}
         <p className="font-serif italic text-base sm:text-xl text-[#18261D] mb-5">
-          “Joseph &amp; Damilola can't wait to celebrate with you!”
+          “Mary &amp; Joseph can't wait to celebrate with you!”
         </p>
 
         {/* VIP PASS TICKET KEEPSAKE (Emerald, Olive & Gold) */}
         <div className="mb-6 sm:mb-7 text-left rounded-xl border-2 border-dashed border-[#D4AF37]/55 bg-gradient-to-b from-[#FAF7F0] to-white p-4 sm:p-5 relative shadow-inner">
           <div className="flex items-start justify-between gap-3 border-b border-[#0F5132]/15 pb-3 mb-3">
             <div>
-              <p className="font-mono text-[10px] tracking-widest uppercase text-[#556B2F] font-bold">
-                OFFICIAL WEDDING GUEST PASS · #MJ2026
+              <p className="font-mono text-[10px] tracking-widest text-[#556B2F] font-bold">
+                OFFICIAL WEDDING GUEST PASS · #mjay2026
               </p>
               <h2 className="font-serif text-xl sm:text-2xl font-bold text-[#0F5132] tracking-wide">
                 {displayName}
@@ -184,18 +185,18 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
             </div>
             <div>
               <span className="text-[#18261D]/60 block text-[10px] uppercase tracking-wider font-semibold">
-                Official Website
+                Celebration
               </span>
               <span className="font-medium text-[#0F5132]">
-                withjoy.com
+                Dec 12, 2026 · Abuja
               </span>
             </div>
           </div>
 
           <div className="pt-2.5 border-t border-[#0F5132]/10 flex items-center justify-between text-[10px] sm:text-[11px] text-[#18261D]/70 font-mono">
-            <span>PASS #MJ2026-CONFIRMED</span>
+            <span>PASS #mjay2026-CONFIRMED</span>
             <span className="flex items-center gap-1 text-[#0F5132]">
-              <Heart className="w-3 h-3 fill-[#D4AF37] text-[#D4AF37]" /> J &amp; D
+              <Heart className="w-3 h-3 fill-[#D4AF37] text-[#D4AF37]" /> M &amp; J
             </span>
           </div>
         </div>
@@ -203,16 +204,15 @@ export const ApprovedScreen: React.FC<ApprovedScreenProps> = ({
         {/* PRIMARY & SECONDARY ACTIONS */}
         <div className="space-y-2.5 sm:space-y-3">
           {/* Prominent Button: EXPLORE OUR WEDDING */}
-          <a
-            href="https://withjoy.com/joseph-and-damilola"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={onExploreWebsite}
             className="group relative w-full inline-flex items-center justify-center gap-2 px-5 py-4 min-h-[52px] text-xs sm:text-sm font-bold tracking-[0.18em] uppercase text-white bg-[#0F5132] hover:bg-[#0B4627] active:scale-[0.99] transition-all rounded-xl shadow-lg hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37] cursor-pointer border-2 border-[#D4AF37]/75 overflow-hidden"
           >
             <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-[#F3E5AB]/20 to-transparent skew-x-12 -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out" />
             <span>EXPLORE OUR WEDDING</span>
-            <ExternalLink className="w-4 h-4 text-[#F3E5AB] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-          </a>
+            <Sparkles className="w-4 h-4 text-[#F3E5AB]" />
+          </button>
 
           {/* Secondary Button: PLAY AGAIN */}
           <button

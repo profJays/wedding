@@ -4,11 +4,13 @@ import { AlertOctagon, RotateCcw, XCircle, ShieldAlert } from 'lucide-react';
 interface UninvitedScreenProps {
   guestName: string;
   onTryAgain: () => void;
+  onReturnToWebsite: () => void;
 }
 
 export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
   guestName,
-  onTryAgain
+  onTryAgain,
+  onReturnToWebsite
 }) => {
   const displayName = guestName.trim() || 'Guest';
 
@@ -47,7 +49,7 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
             “White at MY wedding? Are you serious?”
           </p>
           <p className="text-[11px] sm:text-xs text-red-800 font-medium">
-            — Damilola &amp; Joseph (Aesthetic Enforcement Unit)
+            — Mary &amp; Joseph (Aesthetic Enforcement Unit)
           </p>
         </div>
 
@@ -70,13 +72,21 @@ export const UninvitedScreen: React.FC<UninvitedScreenProps> = ({
         </div>
 
         {/* TRY AGAIN BUTTON */}
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-3">
           <button
             onClick={onTryAgain}
             className="group inline-flex items-center justify-center gap-2.5 px-8 py-3.5 text-sm sm:text-base font-bold tracking-widest uppercase text-white bg-red-700 hover:bg-red-800 active:scale-[0.98] transition-all rounded-xl shadow-md hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 cursor-pointer"
           >
             <RotateCcw className="w-5 h-5 group-hover:-rotate-90 transition-transform" />
             <span>TRY AGAIN (CHOOSE WISELY)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onReturnToWebsite}
+            className="text-xs font-medium text-red-900/75 hover:text-red-950 underline underline-offset-4 cursor-pointer"
+          >
+            Return to Wedding Website
           </button>
         </div>
 

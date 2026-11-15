@@ -1,0 +1,281 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'joepreserve@gmail.com';
+    }
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // SiteContent validation
+    function isValidSiteContent(data) {
+      return data.keys().hasAll([
+        'coupleNames',
+        'brideName',
+        'groomName',
+        'hashtag',
+        'weddingDateDisplay',
+        'ceremonyTargetISO',
+        'galleryUnlockISO',
+        'galleryUnlockEpochMs',
+        'mainVenue',
+        'heroImageUrl',
+        'welcomeHeading',
+        'welcomeParagraphs',
+        'welcomeSignOff',
+        'storyHeading',
+        'storyParagraphs',
+        'coupleQas',
+        'scheduleEvents',
+        'guestFaqs',
+        'rsvpOpen',
+        'maxGuestsPerRsvp',
+        'galleryPublicEnabled',
+        'updatedAt',
+        'updatedByUid'
+      ]) && data.keys().hasOnly([
+        'coupleNames',
+        'brideName',
+        'groomName',
+        'hashtag',
+        'weddingDateDisplay',
+        'ceremonyTargetISO',
+        'galleryUnlockISO',
+        'galleryUnlockEpochMs',
+        'mainVenue',
+        'heroImageUrl',
+        'contactName',
+        'contactPhone',
+        'welcomeHeading',
+        'welcomeParagraphs',
+        'welcomeSignOff',
+        'storyHeading',
+        'storyParagraphs',
+        'coupleQas',
+        'scheduleEvents',
+        'guestFaqs',
+        'footerNote',
+        'rsvpOpen',
+        'maxGuestsPerRsvp',
+        'galleryPublicEnabled',
+        'themePrimaryHex',
+        'themeAccentHex',
+        'themeGoldHex',
+        'updatedAt',
+        'updatedByUid'
+      ])
+      && data.coupleNames is string && data.coupleNames.size() >= 2 && data.coupleNames.size() <= 100
+      && data.brideName is string && data.brideName.size() >= 1 && data.brideName.size() <= 50
+      && data.groomName is string && data.groomName.size() >= 1 && data.groomName.size() <= 50
+      && data.hashtag is string && data.hashtag.size() >= 2 && data.hashtag.size() <= 40
+      && data.weddingDateDisplay is string && data.weddingDateDisplay.size() >= 2 && data.weddingDateDisplay.size() <= 80
+      && data.ceremonyTargetISO is string && data.ceremonyTargetISO.size() >= 10 && data.ceremonyTargetISO.size() <= 40
+      && data.galleryUnlockISO is string && data.galleryUnlockISO.size() >= 10 && data.galleryUnlockISO.size() <= 40
+      && data.galleryUnlockEpochMs is int && data.galleryUnlockEpochMs > 0
+      && data.mainVenue is string && data.mainVenue.size() >= 2 && data.mainVenue.size() <= 240
+      && data.heroImageUrl is string && data.heroImageUrl.size() >= 1 && data.heroImageUrl.size() <= 500
+      && (!('contactName' in data) || (data.contactName is string && data.contactName.size() <= 80))
+      && (!('contactPhone' in data) || (data.contactPhone is string && data.contactPhone.size() <= 40))
+      && data.welcomeHeading is string && data.welcomeHeading.size() >= 1 && data.welcomeHeading.size() <= 160
+      && data.welcomeParagraphs is list && data.welcomeParagraphs.size() >= 1 && data.welcomeParagraphs.size() <= 12 && data.welcomeParagraphs[0] is string
+      && data.welcomeSignOff is string && data.welcomeSignOff.size() >= 1 && data.welcomeSignOff.size() <= 120
+      && data.storyHeading is string && data.storyHeading.size() >= 1 && data.storyHeading.size() <= 160
+      && data.storyParagraphs is list && data.storyParagraphs.size() >= 1 && data.storyParagraphs.size() <= 20 && data.storyParagraphs[0] is string
+      && data.coupleQas is list && data.coupleQas.size() <= 30 && (data.coupleQas.size() == 0 || data.coupleQas[0] is map)
+      && data.scheduleEvents is list && data.scheduleEvents.size() <= 20 && (data.scheduleEvents.size() == 0 || data.scheduleEvents[0] is map)
+      && data.guestFaqs is list && data.guestFaqs.size() <= 30 && (data.guestFaqs.size() == 0 || data.guestFaqs[0] is map)
+      && (!('footerNote' in data) || (data.footerNote is string && data.footerNote.size() <= 200))
+      && data.rsvpOpen is bool
+      && data.maxGuestsPerRsvp is int && data.maxGuestsPerRsvp >= 1 && data.maxGuestsPerRsvp <= 10
+      && data.galleryPublicEnabled is bool
+      && (!('themePrimaryHex' in data) || (data.themePrimaryHex is string && data.themePrimaryHex.size() <= 20))
+      && (!('themeAccentHex' in data) || (data.themeAccentHex is string && data.themeAccentHex.size() <= 20))
+      && (!('themeGoldHex' in data) || (data.themeGoldHex is string && data.themeGoldHex.size() <= 20))
+      && data.updatedAt is timestamp
+      && data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
+    // RSVP validation
+    function isValidRsvp(data, maxGuestsAllowed) {
+      return data.keys().hasAll([
+        'fullName',
+        'normalizedName',
+        'attending',
+        'guestCount',
+        'message',
+        'submittedAt',
+        'updatedAt'
+      ]) && data.keys().hasOnly([
+        'fullName',
+        'normalizedName',
+        'attending',
+        'guestCount',
+        'message',
+        'submittedAt',
+        'updatedAt'
+      ])
+      && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
+      && data.normalizedName is string && data.normalizedName.size() >= 2 && data.normalizedName.size() <= 100
+      && data.attending is bool
+      && data.guestCount is int
+      && ((data.attending == false && data.guestCount == 0) || (data.attending == true && data.guestCount >= 1 && data.guestCount <= maxGuestsAllowed))
+      && data.message is string && data.message.size() <= 1000
+      && data.submittedAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function getConfiguredMaxGuests() {
+      return exists(/databases/$(database)/documents/siteContent/main)
+        ? get(/databases/$(database)/documents/siteContent/main).data.maxGuestsPerRsvp
+        : 1;
+    }
+
+    function isRsvpCurrentlyOpen() {
+      return !exists(/databases/$(database)/documents/siteContent/main)
+        || get(/databases/$(database)/documents/siteContent/main).data.rsvpOpen == true;
+    }
+
+    function getGalleryUnlockEpochMs() {
+      return exists(/databases/$(database)/documents/siteContent/main)
+        ? get(/databases/$(database)/documents/siteContent/main).data.galleryUnlockEpochMs
+        : 1797030000000;
+    }
+
+    // Gallery item validation
+    function isValidGalleryItem(data) {
+      return data.keys().hasAll([
+        'title',
+        'guestName',
+        'mediaType',
+        'mimeType',
+        'fileUrl',
+        'storageProvider',
+        'driveFileId',
+        'sizeBytes',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ]) && data.keys().hasOnly([
+        'title',
+        'guestName',
+        'mediaType',
+        'mimeType',
+        'fileUrl',
+        'storageProvider',
+        'driveFileId',
+        'sizeBytes',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+      && data.guestName is string && data.guestName.size() <= 80
+      && data.mediaType in ['image', 'video']
+      && data.mimeType is string && data.mimeType.size() >= 3 && data.mimeType.size() <= 80
+      && data.fileUrl is string && data.fileUrl.size() >= 1 && data.fileUrl.size() <= 500
+      && data.storageProvider in ['google_drive', 'local_server', 'site_asset']
+      && data.driveFileId is string && data.driveFileId.size() <= 200
+      && data.sizeBytes is int && data.sizeBytes > 0 && data.sizeBytes <= 104857600
+      && data.status in ['pending', 'approved', 'hidden']
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data, adminUid) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'addedAt', 'addedBy'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'addedAt', 'addedBy'])
+        && data.uid is string && data.uid == adminUid && data.uid.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.addedAt is timestamp
+        && data.addedBy is string && data.addedBy == request.auth.uid;
+    }
+
+    // 1. Site Content & Settings
+    match /siteContent/{contentId} {
+      allow get: if isValidId(contentId);
+      allow list: if resource.data.coupleNames is string;
+      allow create, update: if isAdmin()
+        && isValidId(contentId)
+        && isValidSiteContent(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(contentId);
+    }
+
+    // 2. RSVP Records (Zero public read/list; write-once create for guests; full management for Admin)
+    match /rsvps/{rsvpId} {
+      allow get: if isAdmin() && isValidId(rsvpId);
+      allow list: if isAdmin() && resource.data.fullName is string;
+      allow create: if isValidId(rsvpId)
+        && isRsvpCurrentlyOpen()
+        && isValidRsvp(incoming(), getConfiguredMaxGuests())
+        && incoming().submittedAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(rsvpId)
+        && isValidRsvp(incoming(), 10)
+        && incoming().submittedAt == existing().submittedAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'normalizedName', 'attending', 'guestCount', 'message', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(rsvpId);
+    }
+
+    // 3. Gallery Items (Server-time locked before Dec 12 2026 00:00 WAT; guests submit as 'pending')
+    match /galleryItems/{itemId} {
+      allow get: if isValidId(itemId) && (isAdmin() || existing().status == 'approved');
+      allow list: if isAdmin() || resource.data.status == 'approved';
+      allow create: if isValidId(itemId)
+        && isValidGalleryItem(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() || (
+            request.time.toMillis() >= getGalleryUnlockEpochMs()
+            && incoming().status == 'pending'
+          )
+        );
+      allow update: if isAdmin()
+        && isValidId(itemId)
+        && isValidGalleryItem(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'guestName', 'status', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(itemId);
+    }
+
+    // 4. Admins RBAC registry
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isAdmin() && resource.data.uid is string;
+      allow create, update: if isAdmin()
+        && isValidId(adminUid)
+        && isValidAdminUser(incoming(), adminUid)
+        && incoming().addedAt == request.time;
+      allow delete: if isBootstrappedAdmin() && isValidId(adminUid);
+    }
+  }
+}

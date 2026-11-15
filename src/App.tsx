@@ -1,48 +1,141 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { User } from 'firebase/auth';
 import { Header } from './components/Header';
+import { WeddingWebsite } from './components/WeddingWebsite';
 import { InvitationScreen } from './components/InvitationScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { QuizScreen } from './components/QuizScreen';
 import { UninvitedScreen } from './components/UninvitedScreen';
 import { ApprovedScreen } from './components/ApprovedScreen';
 import { DressCodeModal } from './components/DressCodeModal';
+import { AdminDashboard } from './components/AdminDashboard';
 import { Footer } from './components/Footer';
 import { WEDDING_QUESTIONS } from './data/questions';
-import { QuizStep, AnswerOption } from './types';
+import { DEFAULT_SITE_CONTENT } from './data/weddingSite';
+import { subscribeToAuth } from './services/firebase';
+import {
+  subscribeSiteContent,
+  checkCurrentUserIsAdmin
+} from './services/weddingRepository';
+import { AppView, AnswerOption, SiteContentData } from './types';
 
 export default function App() {
-  const [step, setStep] = useState<QuizStep>('invitation');
+  const [view, setView] = useState<AppView>(() =>
+    typeof window !== 'undefined' && window.location.hash === '#admin' ? 'admin' : 'website'
+  );
+  const [siteContent, setSiteContent] = useState<SiteContentData>(DEFAULT_SITE_CONTENT);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [guestName, setGuestName] = useState<string>('');
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [isChallengePassed, setIsChallengePassed] = useState<boolean>(false);
   const [isFaqOpen, setIsFaqOpen] = useState<boolean>(false);
+
+  // Firebase Auth & Admin Verification
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthorizedAdmin, setIsAuthorizedAdmin] = useState<boolean>(false);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const unsubSite = subscribeSiteContent((data) => {
+      setSiteContent(data);
+    });
+    return () => unsubSite();
+  }, []);
+
+  useEffect(() => {
+    const unsubAuth = subscribeToAuth(async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        const ok = await checkCurrentUserIsAdmin();
+        setIsAuthorizedAdmin(ok);
+      } else {
+        setIsAuthorizedAdmin(false);
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      if (window.location.hash === '#admin') {
+        setView('admin');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const currentQuestion = WEDDING_QUESTIONS[currentQuestionIndex];
   const selectedOptionId = currentQuestion ? answers[currentQuestion.id] : undefined;
 
-  // Stage 2 -> Stage 3 transition
-  const handleContinueFromInvitation = () => {
-    setStep('welcome');
+  const clearAdminHash = () => {
+    if (typeof window !== 'undefined' && window.location.hash === '#admin') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
   };
 
-  // Challenge handlers
+  const handleNavigateSection = (sectionId: string) => {
+    clearAdminHash();
+    if (view !== 'website') {
+      setView('website');
+      window.setTimeout(() => {
+        if (sectionId === 'top') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+        const el = document.getElementById(sectionId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 60);
+      return;
+    }
+
+    if (sectionId === 'top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleContinueFromInvitation = () => {
+    clearAdminHash();
+    setView('welcome');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleExploreWebsite = () => {
+    clearAdminHash();
+    setView('website');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleStart = () => {
     setCurrentQuestionIndex(0);
-    setStep('quiz');
+    setView('quiz');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectOption = (option: AnswerOption) => {
-    // If White in Question 5 is selected, trigger dramatic warning screen immediately!
     if (option.isFatal) {
       setAnswers((prev) => ({
         ...prev,
         [currentQuestion.id]: option.id
       }));
-      setStep('uninvited');
+      setIsChallengePassed(false);
+      setView('uninvited');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    // Save answer
     setAnswers((prev) => ({
       ...prev,
       [currentQuestion.id]: option.id
@@ -53,105 +146,160 @@ export default function App() {
     if (currentQuestionIndex < WEDDING_QUESTIONS.length - 1) {
       setCurrentQuestionIndex((prev) => prev + 1);
     } else {
-      // Completed all 5 questions
-      setStep('approved');
+      setIsChallengePassed(true);
+      setView('approved');
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleBack = () => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex((prev) => prev - 1);
     } else {
-      setStep('welcome');
+      setView('welcome');
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleTryAgain = () => {
-    // Return safely to Question 5 (index 4) with White unselected
     setAnswers((prev) => {
       const updated = { ...prev };
-      delete updated[5]; // clear Q5 answer
+      delete updated[5];
       return updated;
     });
     setCurrentQuestionIndex(4);
-    setStep('quiz');
+    setView('quiz');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePlayAgain = () => {
     setAnswers({});
     setCurrentQuestionIndex(0);
-    setStep('welcome');
+    setIsChallengePassed(false);
+    setView('welcome');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleGoInvitation = () => {
-    setStep('invitation');
+    clearAdminHash();
+    setView('invitation');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleGoChallenge = () => {
-    setStep('welcome');
+    clearAdminHash();
+    setView(isChallengePassed ? 'approved' : 'welcome');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Stage 1 & Stage 2: Full-screen luxury digital invitation envelope
-  if (step === 'invitation') {
-    return <InvitationScreen onContinue={handleContinueFromInvitation} />;
+  const handleGoAdmin = () => {
+    if (typeof window !== 'undefined') {
+      window.location.hash = 'admin';
+    }
+    setView('admin');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Full-screen luxury 3D digital invitation envelope
+  if (view === 'invitation') {
+    return (
+      <InvitationScreen
+        onContinue={handleContinueFromInvitation}
+        onExploreWebsite={handleExploreWebsite}
+      />
+    );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#18261D] selection:bg-[#0F5132]/20 selection:text-[#0F5132]">
-      {/* Top Bar navigation */}
+    <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#262820] selection:bg-[#07543E]/20 selection:text-[#07543E]">
       <Header
+        coupleNames={siteContent.coupleNames}
+        activeView={view}
+        onNavigateSection={handleNavigateSection}
         onGoInvitation={handleGoInvitation}
         onGoChallenge={handleGoChallenge}
-        onOpenFaq={() => setIsFaqOpen(true)}
       />
 
-      {/* Main Dynamic Viewport (Stage 3 & Final Stage) */}
-      <main className="flex-1 flex items-center justify-center py-6 sm:py-10">
-        {step === 'welcome' && (
-          <WelcomeScreen
+      {view === 'website' ? (
+        <main className="flex-1 w-full">
+          <WeddingWebsite
+            siteContent={siteContent}
             guestName={guestName}
-            onGuestNameChange={setGuestName}
-            onStart={handleStart}
+            isChallengePassed={isChallengePassed}
+            onGoInvitation={handleGoInvitation}
+            onGoChallenge={handleGoChallenge}
+            onOpenDressCode={() => setIsFaqOpen(true)}
           />
-        )}
-
-        {step === 'quiz' && (
-          <QuizScreen
-            currentQuestion={currentQuestion}
-            currentIndex={currentQuestionIndex}
-            totalQuestions={WEDDING_QUESTIONS.length}
-            selectedOptionId={selectedOptionId}
-            onSelectOption={handleSelectOption}
-            onNext={handleNext}
-            onBack={handleBack}
-            canGoBack={currentQuestionIndex > 0}
+        </main>
+      ) : view === 'admin' ? (
+        <main className="flex-1 w-full bg-[#FAF7F0]">
+          <AdminDashboard
+            siteContent={siteContent}
+            currentUser={currentUser}
+            isAuthorizedAdmin={isAuthorizedAdmin}
+            authLoading={authLoading}
+            onReturnToWebsite={handleExploreWebsite}
           />
-        )}
+        </main>
+      ) : (
+        <main className="flex-1 flex items-center justify-center py-6 sm:py-10">
+          {view === 'welcome' && (
+            <WelcomeScreen
+              guestName={guestName}
+              onGuestNameChange={setGuestName}
+              onStart={handleStart}
+              onReturnToWebsite={handleExploreWebsite}
+            />
+          )}
 
-        {step === 'uninvited' && (
-          <UninvitedScreen
-            guestName={guestName}
-            onTryAgain={handleTryAgain}
-          />
-        )}
+          {view === 'quiz' && (
+            <QuizScreen
+              currentQuestion={currentQuestion}
+              currentIndex={currentQuestionIndex}
+              totalQuestions={WEDDING_QUESTIONS.length}
+              selectedOptionId={selectedOptionId}
+              onSelectOption={handleSelectOption}
+              onNext={handleNext}
+              onBack={handleBack}
+              canGoBack={currentQuestionIndex > 0}
+              onReturnToWebsite={handleExploreWebsite}
+            />
+          )}
 
-        {step === 'approved' && (
-          <ApprovedScreen
-            guestName={guestName}
-            answers={answers}
-            onPlayAgain={handlePlayAgain}
-          />
-        )}
-      </main>
+          {view === 'uninvited' && (
+            <UninvitedScreen
+              guestName={guestName}
+              onTryAgain={handleTryAgain}
+              onReturnToWebsite={handleExploreWebsite}
+            />
+          )}
 
-      {/* Dress Code Explainer Modal */}
+          {view === 'approved' && (
+            <ApprovedScreen
+              guestName={guestName}
+              answers={answers}
+              onPlayAgain={handlePlayAgain}
+              onExploreWebsite={handleExploreWebsite}
+            />
+          )}
+        </main>
+      )}
+
       <DressCodeModal
         isOpen={isFaqOpen}
         onClose={() => setIsFaqOpen(false)}
       />
 
-      {/* Tasteful editorial footer */}
-      <Footer />
+      <Footer
+        coupleNames={siteContent.coupleNames}
+        hashtag={siteContent.hashtag}
+        weddingDateDisplay={siteContent.weddingDateDisplay}
+        footerNote={siteContent.footerNote}
+        onNavigateSection={handleNavigateSection}
+        onGoInvitation={handleGoInvitation}
+        onGoChallenge={handleGoChallenge}
+        onGoAdmin={handleGoAdmin}
+      />
     </div>
   );
 }

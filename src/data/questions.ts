@@ -9,19 +9,19 @@ export const WEDDING_QUESTIONS: Question[] = [
       {
         id: 'q1_a',
         text: "Absolutely! Wouldn't miss it.",
-        verdict: "Front row seating energy! That's what Damilola & Joseph love to hear.",
+        verdict: "Front row seating energy! That's what Mary & Joseph love to hear.",
         personaTag: 'Day-One Devotee'
       },
       {
         id: 'q1_b',
         text: "Of course, I've been waiting for this!",
-        verdict: "The enthusiasm is unmatched! Get ready for an unforgettable day.",
+        verdict: 'The enthusiasm is unmatched! Get ready for an unforgettable day.',
         personaTag: 'Ultimate Hype Friend'
       },
       {
         id: 'q1_c',
         text: "I'll try my best.",
-        verdict: "‘Try’? Clear your calendar right now, there is no trying when Damilola & Joseph marry!",
+        verdict: '‘Try’? Clear your calendar right now, there is no trying when Mary & Joseph marry!',
         personaTag: 'Pending Attendance'
       },
       {
@@ -46,7 +46,7 @@ export const WEDDING_QUESTIONS: Question[] = [
       {
         id: 'q2_b',
         text: "I can't wait!",
-        verdict: 'Counting down every single second right alongside Damilola & Joseph!',
+        verdict: 'Counting down every single second right alongside Mary & Joseph!',
         personaTag: 'Countdown Captain'
       },
       {
@@ -102,13 +102,13 @@ export const WEDDING_QUESTIONS: Question[] = [
       {
         id: 'q4_a',
         text: 'Cash, obviously.',
-        verdict: "Joseph's favorite answer! Account number and registry envelopes are primed.",
+        verdict: "Joseph's favorite answer! Envelopes and celebration blessings are always welcome.",
         personaTag: 'Honeymoon Benefactor'
       },
       {
         id: 'q4_b',
         text: 'Something from the registry.',
-        verdict: 'Orderly, polite, and respectful. Damilola sheds a tear of pure appreciation!',
+        verdict: 'Orderly, polite, and respectful. Mary sheds a tear of pure appreciation!',
         personaTag: 'Registry Virtuoso'
       },
       {
@@ -157,7 +157,7 @@ export const WEDDING_QUESTIONS: Question[] = [
       },
       {
         id: 'q5_whatever',
-        text: 'Whatever Damilola tells me to wear.',
+        text: 'Whatever Mary tells me to wear.',
         verdict: 'The dream guest has spoken! 100% compliance and utmost respect for the bride.',
         personaTag: 'The Model Attendee'
       }
