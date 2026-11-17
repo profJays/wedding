@@ -46,8 +46,9 @@ interface FirebaseAppletConfig {
 }
 
 const DEFAULT_GALLERY_UNLOCK_ISO = '2026-12-12T00:00:00+01:00'; // Saturday, 12 Dec 2026 00:00 Africa/Lagos
-const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15 MB
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_AUDIO_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_BATCH_FILES = 10;
 
 const ALLOWED_IMAGE_MIMES = new Set([
@@ -67,6 +68,16 @@ const ALLOWED_VIDEO_MIMES = new Set([
   'video/x-m4v'
 ]);
 
+const ALLOWED_AUDIO_MIMES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/m4a',
+  'audio/aac',
+  'audio/aacp'
+]);
+
 const EXTENSION_TO_IMAGE_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -84,11 +95,17 @@ const EXTENSION_TO_VIDEO_MIME: Record<string, string> = {
   '.m4v': 'video/x-m4v'
 };
 
+const EXTENSION_TO_AUDIO_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac'
+};
+
 function classifyMediaDescriptor(
   originalName: string,
   mimeType: string
 ): {
-  mediaType: 'image' | 'video' | 'unsupported';
+  mediaType: 'image' | 'video' | 'audio' | 'unsupported';
   canonicalMime: string;
 } {
   const mime = (mimeType || '').toLowerCase().trim();
@@ -100,17 +117,29 @@ function classifyMediaDescriptor(
   if (ALLOWED_VIDEO_MIMES.has(mime)) {
     return { mediaType: 'video', canonicalMime: mime };
   }
+  if (ALLOWED_AUDIO_MIMES.has(mime)) {
+    const canonical =
+      mime === 'audio/mp3'
+        ? 'audio/mpeg'
+        : mime === 'audio/x-m4a' || mime === 'audio/m4a'
+        ? 'audio/mp4'
+        : mime;
+    return { mediaType: 'audio', canonicalMime: canonical };
+  }
   if ((!mime || mime === 'application/octet-stream') && ext in EXTENSION_TO_IMAGE_MIME) {
     return { mediaType: 'image', canonicalMime: EXTENSION_TO_IMAGE_MIME[ext] };
   }
   if ((!mime || mime === 'application/octet-stream') && ext in EXTENSION_TO_VIDEO_MIME) {
     return { mediaType: 'video', canonicalMime: EXTENSION_TO_VIDEO_MIME[ext] };
   }
+  if ((!mime || mime === 'application/octet-stream') && ext in EXTENSION_TO_AUDIO_MIME) {
+    return { mediaType: 'audio', canonicalMime: EXTENSION_TO_AUDIO_MIME[ext] };
+  }
   return { mediaType: 'unsupported', canonicalMime: mime || 'application/octet-stream' };
 }
 
 function classifyUploadedFile(file: Express.Multer.File): {
-  mediaType: 'image' | 'video' | 'unsupported';
+  mediaType: 'image' | 'video' | 'audio' | 'unsupported';
   canonicalMime: string;
 } {
   return classifyMediaDescriptor(file.originalname || '', file.mimetype || '');
@@ -134,6 +163,7 @@ function parseClientFileIds(raw: unknown, count: number): string[] {
 
 const VALID_CATEGORIES = new Set<DriveMediaCategory>([
   'admin_media',
+  'admin_music',
   'website_homepage',
   'website_story',
   'website_schedule',
@@ -274,6 +304,7 @@ async function startServer() {
       limits: {
         maxImageBytes: MAX_IMAGE_BYTES,
         maxVideoBytes: MAX_VIDEO_BYTES,
+        maxAudioBytes: MAX_AUDIO_BYTES,
         maxBatchFiles: MAX_BATCH_FILES
       }
     });
@@ -418,7 +449,7 @@ async function startServer() {
           }
           if (multerErr.code === 'LIMIT_FILE_SIZE') {
             res.status(400).json({
-              error: 'One or more selected files exceed the 100 MB video upload limit (or 15 MB photo limit). Please compress the file or choose a smaller version.',
+              error: 'One or more selected files exceed the 100 MB video upload limit (or 50 MB photo/audio limit). Please compress the file or choose a smaller version.',
               code: 'VIDEO_TOO_LARGE',
               uploaded: [],
               results: [],
@@ -492,9 +523,10 @@ async function startServer() {
           index: number;
           file: Express.Multer.File;
           clientFileId: string;
-          mediaType: 'image' | 'video';
+          mediaType: 'image' | 'video' | 'audio';
           canonicalMime: string;
         }> = [];
+        let blockedGuestAudioCount = 0;
 
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
@@ -508,6 +540,18 @@ async function startServer() {
               status: 'rejected',
               errorCode: 'FILE_EMPTY',
               errorMessage: `${file.originalname} appears to be empty or corrupted (0 bytes). Please choose a valid photo or video.`
+            };
+            continue;
+          }
+
+          if (classified.mediaType === 'audio' && !isAdminUpload) {
+            blockedGuestAudioCount += 1;
+            results[i] = {
+              clientFileId,
+              originalName: file.originalname,
+              status: 'rejected',
+              errorCode: 'UNSUPPORTED_FORMAT',
+              errorMessage: `We couldn't upload ${file.originalname} because audio uploads are restricted to wedding administrators.`
             };
             continue;
           }
@@ -530,7 +574,7 @@ async function startServer() {
               originalName: file.originalname,
               status: 'rejected',
               errorCode: 'IMAGE_TOO_LARGE',
-              errorMessage: `${file.originalname} is ${sizeMb} MB. The maximum photo size is 15 MB. Please compress this image or choose a smaller version.`
+              errorMessage: `${file.originalname} is ${sizeMb} MB. The maximum photo size is 50 MB. Please compress this image or choose a smaller version.`
             };
             continue;
           }
@@ -547,6 +591,18 @@ async function startServer() {
             continue;
           }
 
+          if (classified.mediaType === 'audio' && file.size > MAX_AUDIO_BYTES) {
+            const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+            results[i] = {
+              clientFileId,
+              originalName: file.originalname,
+              status: 'rejected',
+              errorCode: 'AUDIO_TOO_LARGE',
+              errorMessage: `${file.originalname} is ${sizeMb} MB. The maximum audio file size is 50 MB. Please choose a smaller audio file.`
+            };
+            continue;
+          }
+
           validQueue.push({
             index: i,
             file,
@@ -556,10 +612,11 @@ async function startServer() {
           });
         }
 
-        // If zero files passed validation, fail immediately with 400 and all errors
+        // If zero files passed validation, fail immediately with 403 (audio-only guest attempt) or 400
         if (validQueue.length === 0) {
           const firstErr = results.find((r) => r.errorMessage);
-          res.status(400).json({
+          const status = blockedGuestAudioCount === files.length && files.length > 0 ? 403 : 400;
+          res.status(status).json({
             uploaded: [],
             results,
             summary: { total: files.length, succeeded: 0, failed: files.length },
@@ -587,13 +644,16 @@ async function startServer() {
             continue;
           }
 
-          const category: DriveMediaCategory = VALID_CATEGORIES.has(rawCategory)
-            ? rawCategory
-            : isAdminUpload
-            ? 'admin_media'
-            : entry.mediaType === 'image'
-            ? 'guest_photo'
-            : 'guest_video';
+          const category: DriveMediaCategory =
+            isAdminUpload && VALID_CATEGORIES.has(rawCategory)
+              ? rawCategory
+              : isAdminUpload
+              ? entry.mediaType === 'audio'
+                ? 'admin_music'
+                : 'admin_media'
+              : entry.mediaType === 'image'
+              ? 'guest_photo'
+              : 'guest_video';
 
           try {
             const stored = await storeGalleryFileInDrive({
@@ -757,6 +817,13 @@ async function startServer() {
       }
 
       const classified = classifyMediaDescriptor(originalName, rawMime);
+      if (classified.mediaType === 'audio' && !isAdminUpload) {
+        res.status(403).json({
+          error: `Background music uploads are restricted to wedding administrators.`,
+          code: 'UNSUPPORTED_FORMAT'
+        });
+        return;
+      }
       if (classified.mediaType === 'unsupported') {
         res.status(400).json({
           error: `We couldn't upload ${originalName} because this file format is not supported.`,
@@ -768,7 +835,7 @@ async function startServer() {
       if (classified.mediaType === 'image' && sizeBytes > MAX_IMAGE_BYTES) {
         const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
         res.status(400).json({
-          error: `${originalName} is ${sizeMb} MB. The maximum photo size is 15 MB. Please compress this image or choose a smaller version.`,
+          error: `${originalName} is ${sizeMb} MB. The maximum photo size is 50 MB. Please compress this image or choose a smaller version.`,
           code: 'IMAGE_TOO_LARGE'
         });
         return;
@@ -783,11 +850,22 @@ async function startServer() {
         return;
       }
 
+      if (classified.mediaType === 'audio' && sizeBytes > MAX_AUDIO_BYTES) {
+        const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+        res.status(400).json({
+          error: `${originalName} is ${sizeMb} MB. The maximum audio file size is 50 MB. Please choose a smaller audio file.`,
+          code: 'AUDIO_TOO_LARGE'
+        });
+        return;
+      }
+
       const category: DriveMediaCategory =
         isAdminUpload && VALID_CATEGORIES.has(rawCategory)
           ? rawCategory
           : isAdminUpload
-          ? 'admin_media'
+          ? classified.mediaType === 'audio'
+            ? 'admin_music'
+            : 'admin_media'
           : classified.mediaType === 'image'
           ? 'guest_photo'
           : 'guest_video';
@@ -930,7 +1008,12 @@ async function startServer() {
 
       const classified = classifyMediaDescriptor(stored.originalName, stored.mimeType);
       const item: UploadedFileMetadata = {
-        mediaType: classified.mediaType === 'video' ? 'video' : 'image',
+        mediaType:
+          classified.mediaType === 'audio'
+            ? 'audio'
+            : classified.mediaType === 'video'
+            ? 'video'
+            : 'image',
         mimeType: stored.mimeType,
         fileUrl: stored.fileUrl,
         storageProvider: stored.storageProvider,

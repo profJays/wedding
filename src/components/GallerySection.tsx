@@ -435,9 +435,9 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
                 <span>Upload Guidelines</span>
               </p>
               <ul className="list-disc pl-5 space-y-0.5">
-                <li>Up to <strong>{activeLimits.maxBatchFiles} files</strong> per upload batch</li>
-                <li>Photos up to <strong>{Math.round(activeLimits.maxImageBytes / (1024 * 1024))} MB</strong> (JPG, JPEG, PNG, WebP, GIF, HEIC, HEIF)</li>
-                <li>Videos up to <strong>{Math.round(activeLimits.maxVideoBytes / (1024 * 1024))} MB</strong> (MP4, MOV, WebM, M4V)</li>
+                <li>Maximum <strong>{activeLimits.maxBatchFiles} files</strong> per upload</li>
+                <li>Photos: maximum <strong>{Math.round(activeLimits.maxImageBytes / (1024 * 1024))} MB</strong> each (JPG, JPEG, PNG, WebP, GIF, HEIC, HEIF)</li>
+                <li>Videos: maximum <strong>{Math.round(activeLimits.maxVideoBytes / (1024 * 1024))} MB</strong> each (MP4, MOV, WebM, M4V)</li>
               </ul>
             </div>
 
@@ -536,7 +536,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
                     : `Select Photos or Videos (up to ${activeLimits.maxBatchFiles} files)`}
                 </span>
                 <span className="text-xs sm:text-sm text-[#262820]/65 mt-1">
-                  Photos up to 15 MB · Videos up to 100 MB
+                  Photos up to {Math.round(activeLimits.maxImageBytes / (1024 * 1024))} MB · Videos up to {Math.round(activeLimits.maxVideoBytes / (1024 * 1024))} MB
                 </span>
               </label>
               <input

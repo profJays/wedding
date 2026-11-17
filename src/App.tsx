@@ -10,6 +10,7 @@ import { ApprovedScreen } from './components/ApprovedScreen';
 import { DressCodeModal } from './components/DressCodeModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Footer } from './components/Footer';
+import { BackgroundMusicPlayer } from './components/BackgroundMusicPlayer';
 import { WEDDING_QUESTIONS } from './data/questions';
 import { DEFAULT_SITE_CONTENT } from './data/weddingSite';
 import { subscribeToAuth } from './services/firebase';
@@ -82,7 +83,8 @@ export default function App() {
     if (view !== 'website') {
       setHasEnteredWebsite(true);
       setView('website');
-      window.setTimeout(() => {
+      let attempts = 0;
+      const attemptScroll = () => {
         if (sectionId === 'top') {
           window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
@@ -90,10 +92,14 @@ export default function App() {
         const el = document.getElementById(sectionId);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (attempts < 10) {
+          attempts += 1;
+          window.setTimeout(attemptScroll, 40);
         } else {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
-      }, 60);
+      };
+      window.setTimeout(attemptScroll, 40);
       return;
     }
 
@@ -204,27 +210,24 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Full-screen luxury 3D digital invitation envelope (First screen on public entry)
-  if (view === 'invitation') {
-    return (
-      <InvitationScreen
-        onContinue={handleContinueFromInvitation}
-        onExploreWebsite={handleExploreWebsite}
-        canReturnToWebsite={hasEnteredWebsite}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#262820] selection:bg-[#07543E]/20 selection:text-[#07543E]">
-      <Header
-        coupleNames={siteContent.coupleNames}
-        activeView={view}
-        puzzleEnabled={siteContent.puzzleEnabled !== false}
-        onNavigateSection={handleNavigateSection}
-        onGoInvitation={handleGoInvitation}
-        onGoChallenge={handleGoChallenge}
-      />
+      {view === 'invitation' ? (
+        <InvitationScreen
+          onContinue={handleContinueFromInvitation}
+          onExploreWebsite={handleExploreWebsite}
+          canReturnToWebsite={hasEnteredWebsite}
+        />
+      ) : (
+        <>
+          <Header
+            coupleNames={siteContent.coupleNames}
+            activeView={view}
+            puzzleEnabled={siteContent.puzzleEnabled !== false}
+            onNavigateSection={handleNavigateSection}
+            onGoInvitation={handleGoInvitation}
+            onGoChallenge={handleGoChallenge}
+          />
 
       {view === 'website' ? (
         <main className="flex-1 w-full">
@@ -299,16 +302,27 @@ export default function App() {
         onClose={() => setIsFaqOpen(false)}
       />
 
-      <Footer
-        coupleNames={siteContent.coupleNames}
-        hashtag={siteContent.hashtag}
-        weddingDateDisplay={siteContent.weddingDateDisplay}
-        footerNote={siteContent.footerNote}
-        puzzleEnabled={siteContent.puzzleEnabled !== false}
-        onNavigateSection={handleNavigateSection}
-        onGoInvitation={handleGoInvitation}
-        onGoChallenge={handleGoChallenge}
-        onGoAdmin={handleGoAdmin}
+          <Footer
+            coupleNames={siteContent.coupleNames}
+            hashtag={siteContent.hashtag}
+            weddingDateDisplay={siteContent.weddingDateDisplay}
+            footerNote={siteContent.footerNote}
+            puzzleEnabled={siteContent.puzzleEnabled !== false}
+            onNavigateSection={handleNavigateSection}
+            onGoInvitation={handleGoInvitation}
+            onGoChallenge={handleGoChallenge}
+            onGoAdmin={handleGoAdmin}
+          />
+        </>
+      )}
+
+      <BackgroundMusicPlayer
+        enabled={siteContent.musicEnabled !== false}
+        title={siteContent.musicTitle || 'Perfect'}
+        artist={siteContent.musicArtist || 'Ed Sheeran'}
+        audioUrl={siteContent.musicAudioUrl || ''}
+        visible={view !== 'invitation' && view !== 'admin'}
+        shouldPause={view === 'admin'}
       />
     </div>
   );

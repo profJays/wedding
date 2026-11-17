@@ -1,6 +1,7 @@
 export const MAX_BATCH_FILES = 10;
-export const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15 MB
+export const MAX_IMAGE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
+export const MAX_AUDIO_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export const SUPPORTED_IMAGE_EXTENSIONS = [
   '.jpg',
@@ -17,6 +18,12 @@ export const SUPPORTED_VIDEO_EXTENSIONS = [
   '.mov',
   '.webm',
   '.m4v'
+] as const;
+
+export const SUPPORTED_AUDIO_EXTENSIONS = [
+  '.mp3',
+  '.m4a',
+  '.aac'
 ] as const;
 
 export const SUPPORTED_IMAGE_MIMES = new Set([
@@ -36,6 +43,16 @@ export const SUPPORTED_VIDEO_MIMES = new Set([
   'video/x-m4v'
 ]);
 
+export const SUPPORTED_AUDIO_MIMES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/m4a',
+  'audio/aac',
+  'audio/aacp'
+]);
+
 export const FILE_INPUT_ACCEPT = [
   ...SUPPORTED_IMAGE_EXTENSIONS,
   ...SUPPORTED_VIDEO_EXTENSIONS,
@@ -51,10 +68,19 @@ export const FILE_INPUT_ACCEPT = [
   'video/x-m4v'
 ].join(',');
 
+export const AUDIO_FILE_INPUT_ACCEPT = [
+  ...SUPPORTED_AUDIO_EXTENSIONS,
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac'
+].join(',');
+
 export interface SelectedUploadEntry {
   id: string;
   file: File;
-  mediaType: 'image' | 'video' | 'unsupported';
+  mediaType: 'image' | 'video' | 'audio' | 'unsupported';
   formatLabel: string;
   sizeBytes: number;
   isValid: boolean;
@@ -87,12 +113,25 @@ function getFileExtension(name: string): string {
   return name.slice(dotIdx).toLowerCase();
 }
 
-export function detectFileMediaInfo(file: File): {
-  mediaType: 'image' | 'video' | 'unsupported';
+export function detectFileMediaInfo(
+  file: File,
+  options?: { allowAudio?: boolean }
+): {
+  mediaType: 'image' | 'video' | 'audio' | 'unsupported';
   formatLabel: string;
 } {
   const mime = (file.type || '').toLowerCase().trim();
   const ext = getFileExtension(file.name);
+
+  if (options?.allowAudio) {
+    if (SUPPORTED_AUDIO_MIMES.has(mime)) {
+      const extLabel = ext ? ext.slice(1).toUpperCase() : 'AUDIO';
+      return { mediaType: 'audio', formatLabel: `Audio · ${extLabel}` };
+    }
+    if ((!mime || mime === 'application/octet-stream') && (SUPPORTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
+      return { mediaType: 'audio', formatLabel: `Audio · ${ext.slice(1).toUpperCase()}` };
+    }
+  }
 
   if (SUPPORTED_IMAGE_MIMES.has(mime)) {
     const extLabel = ext ? ext.slice(1).toUpperCase() : mime.split('/')[1]?.toUpperCase() || 'IMAGE';
@@ -120,19 +159,31 @@ export function detectFileMediaInfo(file: File): {
 
 export function createSelectedUploadEntry(
   file: File,
-  limits?: { maxImageBytes?: number; maxVideoBytes?: number },
+  limits?: {
+    maxImageBytes?: number;
+    maxVideoBytes?: number;
+    maxAudioBytes?: number;
+    allowAudio?: boolean;
+  },
   existingId?: string
 ): SelectedUploadEntry {
   const maxImg = limits?.maxImageBytes || MAX_IMAGE_BYTES;
   const maxVid = limits?.maxVideoBytes || MAX_VIDEO_BYTES;
-  const { mediaType, formatLabel } = detectFileMediaInfo(file);
+  const maxAud = limits?.maxAudioBytes || MAX_AUDIO_BYTES;
+  const { mediaType, formatLabel } = detectFileMediaInfo(file, {
+    allowAudio: Boolean(limits?.allowAudio)
+  });
 
   let validationError: string | null = null;
 
   if (file.size <= 0) {
-    validationError = `${file.name} appears to be empty or corrupted (0 bytes). Please choose a valid photo or video.`;
+    validationError = `${file.name} appears to be empty or corrupted (0 bytes). Please choose a valid ${
+      limits?.allowAudio ? 'audio file' : 'photo or video'
+    }.`;
   } else if (mediaType === 'unsupported') {
-    validationError = `We couldn't upload ${file.name} because this file format is not supported. Please select an image or video in one of the supported formats.`;
+    validationError = limits?.allowAudio
+      ? `We couldn't upload ${file.name} because this file format is not supported. Please select an MP3, M4A, or AAC audio file.`
+      : `We couldn't upload ${file.name} because this file format is not supported. Please select an image or video in one of the supported formats.`;
   } else if (mediaType === 'image' && file.size > maxImg) {
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
     const maxImgMb = Math.round(maxImg / (1024 * 1024));
@@ -141,6 +192,10 @@ export function createSelectedUploadEntry(
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
     const maxVidMb = Math.round(maxVid / (1024 * 1024));
     validationError = `${file.name} is ${sizeMb} MB. The maximum video size is ${maxVidMb} MB. Please compress the video or select a smaller version.`;
+  } else if (mediaType === 'audio' && file.size > maxAud) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    const maxAudMb = Math.round(maxAud / (1024 * 1024));
+    validationError = `${file.name} is ${sizeMb} MB. The maximum audio file size is ${maxAudMb} MB. Please choose a smaller audio file.`;
   }
 
   return {
@@ -156,9 +211,37 @@ export function createSelectedUploadEntry(
   };
 }
 
+export function createSelectedAudioEntry(
+  file: File,
+  maxAudioBytes = MAX_AUDIO_BYTES,
+  existingId?: string
+): SelectedUploadEntry {
+  const entry = createSelectedUploadEntry(
+    file,
+    { maxAudioBytes, allowAudio: true },
+    existingId
+  );
+  if (entry.mediaType !== 'audio') {
+    return {
+      ...entry,
+      isValid: false,
+      validationError:
+        entry.validationError ||
+        'Please select a supported wedding background music file (MP3, M4A, or AAC up to 50 MB).'
+    };
+  }
+  return entry;
+}
+
 export function validateUploadEntries(
   entries: SelectedUploadEntry[],
-  limits?: { maxBatchFiles?: number; maxImageBytes?: number; maxVideoBytes?: number }
+  limits?: {
+    maxBatchFiles?: number;
+    maxImageBytes?: number;
+    maxVideoBytes?: number;
+    maxAudioBytes?: number;
+    allowAudio?: boolean;
+  }
 ): BatchValidationReport {
   const maxBatch = limits?.maxBatchFiles || MAX_BATCH_FILES;
   const rechecked = entries.map((entry) => {

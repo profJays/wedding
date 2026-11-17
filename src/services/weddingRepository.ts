@@ -102,6 +102,30 @@ export function subscribeSiteContent(
           typeof raw.puzzleImageUrl === 'string' && raw.puzzleImageUrl.trim().length > 0
             ? raw.puzzleImageUrl
             : DEFAULT_SITE_CONTENT.puzzleImageUrl,
+        musicEnabled:
+          typeof raw.musicEnabled === 'boolean'
+            ? raw.musicEnabled
+            : DEFAULT_SITE_CONTENT.musicEnabled,
+        musicTitle:
+          typeof raw.musicTitle === 'string' && raw.musicTitle.trim().length > 0
+            ? raw.musicTitle
+            : DEFAULT_SITE_CONTENT.musicTitle,
+        musicArtist:
+          typeof raw.musicArtist === 'string' && raw.musicArtist.trim().length > 0
+            ? raw.musicArtist
+            : DEFAULT_SITE_CONTENT.musicArtist,
+        musicAudioFileId:
+          typeof raw.musicAudioFileId === 'string'
+            ? raw.musicAudioFileId
+            : DEFAULT_SITE_CONTENT.musicAudioFileId,
+        musicAudioUrl:
+          typeof raw.musicAudioUrl === 'string' && !raw.musicAudioUrl.trim().startsWith('blob:')
+            ? raw.musicAudioUrl.trim()
+            : DEFAULT_SITE_CONTENT.musicAudioUrl,
+        musicAudioFileName:
+          typeof raw.musicAudioFileName === 'string'
+            ? raw.musicAudioFileName
+            : DEFAULT_SITE_CONTENT.musicAudioFileName,
         welcomeParagraphs: Array.isArray(raw.welcomeParagraphs) && raw.welcomeParagraphs.length > 0
           ? raw.welcomeParagraphs
           : DEFAULT_SITE_CONTENT.welcomeParagraphs,
@@ -134,6 +158,12 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
     rawPuzzleUrl && !rawPuzzleUrl.startsWith('blob:')
       ? rawPuzzleUrl.slice(0, 500)
       : (DEFAULT_SITE_CONTENT.puzzleImageUrl || '').slice(0, 500);
+
+  const rawMusicUrl = (content.musicAudioUrl || '').trim();
+  const safeMusicUrl =
+    rawMusicUrl && !rawMusicUrl.startsWith('blob:')
+      ? rawMusicUrl.slice(0, 500)
+      : '';
 
   const unlockMs = new Date(content.galleryUnlockISO).getTime();
   const payload = {
@@ -169,6 +199,12 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
     puzzleEnabled: content.puzzleEnabled !== false,
     puzzleImageFileId: (content.puzzleImageFileId || '').trim().slice(0, 200),
     puzzleImageUrl: safePuzzleUrl,
+    musicEnabled: content.musicEnabled !== false,
+    musicTitle: ((content.musicTitle || '').trim() || DEFAULT_SITE_CONTENT.musicTitle || 'Perfect').slice(0, 120),
+    musicArtist: ((content.musicArtist || '').trim() || DEFAULT_SITE_CONTENT.musicArtist || 'Ed Sheeran').slice(0, 120),
+    musicAudioFileId: safeMusicUrl ? (content.musicAudioFileId || '').trim().slice(0, 200) : '',
+    musicAudioUrl: safeMusicUrl,
+    musicAudioFileName: safeMusicUrl ? (content.musicAudioFileName || '').trim().slice(0, 160) : '',
     updatedAt: serverTimestamp(),
     updatedByUid: uid
   };
@@ -351,7 +387,13 @@ export function subscribeApprovedGalleryItems(
             id: d.id,
             title: String(data.title || 'Wedding Moment'),
             guestName: String(data.guestName || ''),
-            mediaType: (data.mediaType === 'video' ? 'video' : 'image') as 'image' | 'video',
+            mediaType: (
+              data.mediaType === 'video'
+                ? 'video'
+                : data.mediaType === 'audio'
+                ? 'audio'
+                : 'image'
+            ) as GalleryItem['mediaType'],
             mimeType: String(data.mimeType || 'image/jpeg'),
             fileUrl: String(data.fileUrl || ''),
             storageProvider: (data.storageProvider || 'local_server') as GalleryItem['storageProvider'],
@@ -362,6 +404,7 @@ export function subscribeApprovedGalleryItems(
             updatedAt: toJsDate(data.updatedAt)
           };
         })
+        .filter((item) => item.mediaType !== 'audio')
         .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
       onData(items);
     },
@@ -381,7 +424,12 @@ export async function listAllGalleryItemsAdmin(): Promise<GalleryItem[]> {
         id: d.id,
         title: String(data.title || 'Wedding Moment'),
         guestName: String(data.guestName || ''),
-        mediaType: data.mediaType === 'video' ? 'video' : 'image',
+        mediaType:
+          data.mediaType === 'video'
+            ? 'video'
+            : data.mediaType === 'audio'
+            ? 'audio'
+            : 'image',
         mimeType: String(data.mimeType || 'image/jpeg'),
         fileUrl: String(data.fileUrl || ''),
         storageProvider: (data.storageProvider || 'local_server') as GalleryItem['storageProvider'],
@@ -974,7 +1022,8 @@ export async function uploadGalleryMediaFiles(params: {
     const itemId = `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const title = (params.caption.trim() || uploaded.originalName || 'Wedding Moment').slice(0, 160);
     const guestName = params.guestName.trim().slice(0, 80);
-    const status = params.isAdmin ? 'approved' : 'pending';
+    const status =
+      uploaded.mediaType === 'audio' ? 'hidden' : params.isAdmin ? 'approved' : 'pending';
 
     try {
       await setDoc(doc(db, 'galleryItems', itemId), {

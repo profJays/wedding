@@ -25,7 +25,7 @@ export const Footer: React.FC<FooterProps> = ({
   onGoAdmin
 }) => {
   return (
-    <footer className="w-full border-t border-[#C5A04A]/25 bg-[#FAF7F0] py-10 sm:py-12 px-4 text-center text-sm text-[#262820]/75 mt-auto">
+    <footer className="w-full border-t border-[#C5A04A]/25 bg-[#FAF7F0] pt-10 sm:pt-12 pb-24 sm:pb-20 px-4 text-center text-sm text-[#262820]/75 mt-auto">
       <div className="max-w-5xl mx-auto flex flex-col items-center gap-4">
         <p className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] tracking-wide">
           {coupleNames}

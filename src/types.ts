@@ -81,6 +81,12 @@ export interface SiteContentData {
   puzzleEnabled?: boolean;
   puzzleImageFileId?: string;
   puzzleImageUrl?: string;
+  musicEnabled?: boolean;
+  musicTitle?: string;
+  musicArtist?: string;
+  musicAudioFileId?: string;
+  musicAudioUrl?: string;
+  musicAudioFileName?: string;
   updatedAt?: string;
   updatedByUid?: string;
 }
@@ -100,7 +106,7 @@ export interface GalleryItem {
   id: string;
   title: string;
   guestName: string;
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'audio';
   mimeType: string;
   fileUrl: string;
   storageProvider: 'google_drive' | 'local_server' | 'site_asset';
@@ -121,6 +127,7 @@ export interface AdminUser {
 
 export type DriveMediaCategory =
   | 'admin_media'
+  | 'admin_music'
   | 'website_homepage'
   | 'website_story'
   | 'website_schedule'
@@ -137,6 +144,7 @@ export interface DriveSubfolderMap {
   guestPhotosId?: string;
   guestVideosId?: string;
   adminMediaId?: string;
+  websiteMusicId?: string;
 }
 
 export type DriveAuthState =
@@ -197,6 +205,7 @@ export interface GalleryServerStatus {
   limits: {
     maxImageBytes: number;
     maxVideoBytes: number;
+    maxAudioBytes?: number;
     maxBatchFiles: number;
   };
 }
@@ -207,6 +216,7 @@ export type UploadErrorCode =
   | 'UNSUPPORTED_FORMAT'
   | 'IMAGE_TOO_LARGE'
   | 'VIDEO_TOO_LARGE'
+  | 'AUDIO_TOO_LARGE'
   | 'TOO_MANY_FILES'
   | 'GALLERY_LOCKED'
   | 'DRIVE_NOT_CONFIGURED'
@@ -219,7 +229,7 @@ export type UploadErrorCode =
   | 'SERVER_ERROR';
 
 export interface UploadedFileMetadata {
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'audio';
   mimeType: string;
   fileUrl: string;
   storageProvider: 'google_drive' | 'local_server';
@@ -268,7 +278,7 @@ export interface ResumableInitResponse {
   sessionId: string;
   driveUploadUri: string;
   chunkBytes: number;
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'audio';
   mimeType: string;
   category: DriveMediaCategory;
   folderName: string;

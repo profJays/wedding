@@ -189,5 +189,11 @@ export const DEFAULT_SITE_CONTENT: SiteContentData = {
   themeGoldHex: '#C5A04A',
   puzzleEnabled: true,
   puzzleImageFileId: '',
-  puzzleImageUrl: WEDDING_PHOTOS.story.src
+  puzzleImageUrl: WEDDING_PHOTOS.story.src,
+  musicEnabled: true,
+  musicTitle: 'Perfect',
+  musicArtist: 'Ed Sheeran',
+  musicAudioFileId: '',
+  musicAudioUrl: '',
+  musicAudioFileName: ''
 };

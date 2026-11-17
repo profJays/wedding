@@ -29,7 +29,8 @@ import {
   Info,
   Puzzle,
   Eye,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Music
 } from 'lucide-react';
 import { WeddingPuzzleBoard } from './WeddingPhotoPuzzleSection';
 import { User } from 'firebase/auth';
@@ -79,11 +80,14 @@ import {
   GuestFAQItem
 } from '../types';
 import {
+  AUDIO_FILE_INPUT_ACCEPT,
   FILE_INPUT_ACCEPT,
+  MAX_AUDIO_BYTES,
   MAX_BATCH_FILES,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
   SelectedUploadEntry,
+  createSelectedAudioEntry,
   createSelectedUploadEntry,
   formatFileSize,
   validateUploadEntries
@@ -230,6 +234,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [puzzleImageProgress, setPuzzleImageProgress] = useState(0);
   const [puzzleImageError, setPuzzleImageError] = useState<string | null>(null);
   const puzzleFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Wedding Background Music settings state
+  const [showMusicPicker, setShowMusicPicker] = useState(false);
+  const [showMusicPreviewModal, setShowMusicPreviewModal] = useState(false);
+  const [musicAudioUploading, setMusicAudioUploading] = useState(false);
+  const [musicAudioProgress, setMusicAudioProgress] = useState(0);
+  const [musicAudioError, setMusicAudioError] = useState<string | null>(null);
+  const musicFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setDraftContent(siteContent);
@@ -474,7 +486,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (entry.mediaType !== 'image') {
       setPuzzleImageError(
         entry.validationError ||
-          'Please select an image file (JPG, PNG, WebP, GIF, HEIC, or HEIF) up to 15 MB.'
+          'Please select an image file (JPG, PNG, WebP, GIF, HEIC, or HEIF) up to 50 MB.'
       );
       return;
     }
@@ -530,6 +542,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleUploadMusicAudio = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (musicFileInputRef.current) musicFileInputRef.current.value = '';
+    if (!file || musicAudioUploading) return;
+
+    setMusicAudioError(null);
+    const entry = createSelectedAudioEntry(file, adminLimits.maxAudioBytes);
+    if (!entry.isValid || entry.mediaType !== 'audio') {
+      setMusicAudioError(
+        entry.validationError ||
+          'Please select an MP3, M4A, or AAC audio file up to 50 MB.'
+      );
+      return;
+    }
+
+    setMusicAudioUploading(true);
+    setMusicAudioProgress(0);
+    setBannerMessage(null);
+
+    try {
+      const caption =
+        draftContent.musicTitle && draftContent.musicArtist
+          ? `${draftContent.musicTitle} - ${draftContent.musicArtist}`
+          : file.name;
+      const outcome = await uploadGalleryMediaFiles({
+        entries: [{ id: entry.id, file }],
+        guestName: siteContent.coupleNames,
+        caption,
+        category: 'admin_music',
+        isAdmin: true,
+        onProgress: setMusicAudioProgress
+      });
+
+      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
+      if (outcome.needsDriveReconnect) {
+        setAdminNeedsDriveReconnect(true);
+      }
+
+      if (outcome.createdItems.length > 0) {
+        const created = outcome.createdItems[0];
+        setDraftContent((d) => ({
+          ...d,
+          musicAudioFileId: created.driveFileId,
+          musicAudioUrl: created.fileUrl,
+          musicAudioFileName: file.name
+        }));
+        await loadAllAdminData();
+        setBannerMessage({
+          type: 'success',
+          text: 'Background music audio uploaded to Google Drive. Click "Save Changes" to publish it live.'
+        });
+      } else {
+        const errMsg =
+          outcome.results[0]?.errorMessage ||
+          outcome.globalError ||
+          'Could not upload the wedding music file.';
+        setMusicAudioError(errMsg);
+      }
+    } catch (err) {
+      setMusicAudioError(
+        err instanceof Error ? err.message : 'Could not upload the wedding music file.'
+      );
+    } finally {
+      setMusicAudioUploading(false);
+    }
+  };
+
   // KPI Metrics
   const rsvpMetrics = useMemo(() => {
     const attendingRecords = rsvps.filter((r) => r.attending);
@@ -549,6 +628,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const pending = galleryItems.filter((i) => i.status === 'pending').length;
     return { photos, videos, pending };
   }, [galleryItems]);
+
+  const existingAudioTracks = useMemo(
+    () => galleryItems.filter((i) => i.mediaType === 'audio'),
+    [galleryItems]
+  );
 
   const filteredRsvps = useMemo(() => {
     const q = rsvpSearch.trim().toLowerCase();
@@ -572,7 +656,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     () => ({
       maxBatchFiles: serverStatus?.limits.maxBatchFiles || MAX_BATCH_FILES,
       maxImageBytes: serverStatus?.limits.maxImageBytes || MAX_IMAGE_BYTES,
-      maxVideoBytes: serverStatus?.limits.maxVideoBytes || MAX_VIDEO_BYTES
+      maxVideoBytes: serverStatus?.limits.maxVideoBytes || MAX_VIDEO_BYTES,
+      maxAudioBytes: serverStatus?.limits.maxAudioBytes || MAX_AUDIO_BYTES
     }),
     [serverStatus]
   );
@@ -2118,12 +2203,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-3.5 rounded-lg bg-[#F2EBDD]/80 border border-[#C5A04A]/35 text-xs sm:text-sm text-[#262820]/85 space-y-1">
                 <p className="font-semibold text-[#07543E] flex items-center gap-1.5">
                   <Info className="w-4 h-4 text-[#C5A04A] shrink-0" />
-                  <span>Upload Limits</span>
+                  <span>Upload Guidelines</span>
                 </p>
                 <p>
-                  Up to <strong>{adminLimits.maxBatchFiles} files</strong> per batch · Photos up to{' '}
-                  <strong>{Math.round(adminLimits.maxImageBytes / (1024 * 1024))} MB</strong> (JPG, PNG, WebP, GIF, HEIC) · Videos up to{' '}
-                  <strong>{Math.round(adminLimits.maxVideoBytes / (1024 * 1024))} MB</strong> (MP4, MOV, WebM, M4V)
+                  Maximum <strong>{adminLimits.maxBatchFiles} files</strong> per upload · Photos: maximum{' '}
+                  <strong>{Math.round(adminLimits.maxImageBytes / (1024 * 1024))} MB</strong> each (JPG, PNG, WebP, GIF, HEIC, HEIF) · Videos: maximum{' '}
+                  <strong>{Math.round(adminLimits.maxVideoBytes / (1024 * 1024))} MB</strong> each (MP4, MOV, WebM, M4V)
                 </p>
               </div>
 
@@ -2400,7 +2485,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 overflow-hidden flex flex-col"
                 >
                   <div className="aspect-[4/3] bg-stone-100 relative">
-                    {item.mediaType === 'video' ? (
+                    {item.mediaType === 'audio' ? (
+                      <div className="w-full h-full bg-[#073B2B] p-4 flex flex-col items-center justify-center gap-3 text-center">
+                        <div className="w-11 h-11 rounded-full bg-[#07543E] border border-[#C5A04A]/55 flex items-center justify-center text-[#F3E5AB]">
+                          <Music className="w-5 h-5" />
+                        </div>
+                        <p className="text-xs text-[#E6CE8A] font-semibold uppercase tracking-wider">
+                          Website Audio Track
+                        </p>
+                        <audio
+                          controls
+                          preload="none"
+                          src={item.fileUrl}
+                          className="w-full max-w-[240px]"
+                        />
+                      </div>
+                    ) : item.mediaType === 'video' ? (
                       <video
                         src={item.fileUrl}
                         controls
@@ -2416,7 +2516,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     )}
                     <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded bg-black/70 text-white font-mono text-xs uppercase">
-                      {item.status}
+                      {item.mediaType === 'audio' ? 'Audio · Hidden' : item.status}
                     </span>
                   </div>
 
@@ -2769,6 +2869,294 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         );
                       })}
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Website Background Music Settings Card */}
+          <section className="p-6 sm:p-8 rounded-xl bg-[#FFFDF8] border border-[#C5A04A]/35 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#07543E]/10 pb-4">
+              <div className="flex items-start gap-3">
+                <Music className="w-5 h-5 text-[#07543E] mt-1 shrink-0" />
+                <div>
+                  <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
+                    Website Background Music
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[#262820]/75 mt-0.5">
+                    Manage the floating wedding music player shown to visitors across sections (supports MP3, M4A, AAC up to 50 MB).
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={draftContent.musicEnabled !== false}
+                onClick={() =>
+                  setDraftContent((d) => ({
+                    ...d,
+                    musicEnabled: !(d.musicEnabled !== false)
+                  }))
+                }
+                className={`inline-flex items-center justify-center gap-2.5 px-4 min-h-[44px] rounded-lg border text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors shrink-0 ${
+                  draftContent.musicEnabled !== false
+                    ? 'bg-[#07543E] text-white border-[#07543E]'
+                    : 'bg-white text-[#262820]/75 border-[#07543E]/25'
+                }`}
+              >
+                <span>
+                  {draftContent.musicEnabled !== false
+                    ? 'Music Enabled'
+                    : 'Music Hidden'}
+                </span>
+              </button>
+            </div>
+
+            {musicAudioError && (
+              <div
+                role="alert"
+                className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 flex items-start gap-2"
+              >
+                <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                <span>{musicAudioError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+              {/* Current Audio Preview / Player */}
+              <div className="md:col-span-5 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#07543E]">
+                  Current Audio Preview / Player
+                </p>
+
+                <div className="p-4 rounded-xl bg-[#073B2B] border border-[#C5A04A]/50 text-[#FAF7F0] space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-[#07543E] border border-[#C5A04A]/45 flex items-center justify-center text-[#F3E5AB] shrink-0">
+                      <Music className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-serif text-base font-semibold text-[#FAF7F0] truncate">
+                        {draftContent.musicTitle || 'Perfect'}
+                      </p>
+                      <p className="text-xs text-[#E6CE8A]/90 truncate">
+                        {draftContent.musicArtist || 'Ed Sheeran'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {draftContent.musicAudioUrl ? (
+                    <audio
+                      key={draftContent.musicAudioUrl}
+                      controls
+                      preload="metadata"
+                      src={draftContent.musicAudioUrl}
+                      className="w-full h-10"
+                    />
+                  ) : (
+                    <div className="p-3 rounded-lg bg-[#07543E]/60 border border-[#C5A04A]/30 text-xs text-[#FAF7F0]/80 leading-relaxed">
+                      No wedding audio file uploaded yet. Upload your licensed MP3, M4A, or AAC track using the buttons on the right.
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-xs text-[#262820]/65 break-all">
+                  {draftContent.musicAudioFileId
+                    ? `Google Drive File: ${draftContent.musicAudioFileName || draftContent.musicAudioFileId}`
+                    : 'Track status: Awaiting audio file'}
+                </p>
+              </div>
+
+              {/* Song Details & Audio File Controls */}
+              <div className="md:col-span-7 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="music-title-input"
+                      className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
+                    >
+                      Song Title
+                    </label>
+                    <input
+                      id="music-title-input"
+                      type="text"
+                      maxLength={120}
+                      value={draftContent.musicTitle ?? ''}
+                      onChange={(e) =>
+                        setDraftContent((d) => ({ ...d, musicTitle: e.target.value }))
+                      }
+                      placeholder="Perfect"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-lg border border-[#07543E]/20 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="music-artist-input"
+                      className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
+                    >
+                      Artist Name
+                    </label>
+                    <input
+                      id="music-artist-input"
+                      type="text"
+                      maxLength={120}
+                      value={draftContent.musicArtist ?? ''}
+                      onChange={(e) =>
+                        setDraftContent((d) => ({ ...d, musicArtist: e.target.value }))
+                      }
+                      placeholder="Ed Sheeran"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-lg border border-[#07543E]/20 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label
+                    htmlFor="admin-music-upload-input"
+                    className={`inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-[#07543E] text-xs font-semibold uppercase tracking-wider ${
+                      musicAudioUploading ? 'opacity-60 pointer-events-none' : 'cursor-pointer'
+                    }`}
+                  >
+                    {musicAudioUploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 text-[#C5A04A]" />
+                    )}
+                    <span>
+                      {musicAudioUploading
+                        ? `Uploading (${musicAudioProgress}%)...`
+                        : 'Upload New Music'}
+                    </span>
+                  </label>
+                  <input
+                    ref={musicFileInputRef}
+                    id="admin-music-upload-input"
+                    type="file"
+                    accept={AUDIO_FILE_INPUT_ACCEPT}
+                    disabled={musicAudioUploading}
+                    onChange={(e) => void handleUploadMusicAudio(e)}
+                    className="sr-only"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowMusicPicker((prev) => !prev)}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                  >
+                    <Music className="w-4 h-4 text-[#C5A04A]" />
+                    <span>
+                      {showMusicPicker ? 'Hide Audio Picker' : 'Select Existing Audio File'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={musicAudioUploading}
+                    onClick={() => musicFileInputRef.current?.click()}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-60 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-[#C5A04A]" />
+                    <span>Replace Music</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowMusicPreviewModal(true)}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#C5A04A] bg-[#F2EBDD] hover:bg-[#EADFC9] text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>Preview Music</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={savingContent || musicAudioUploading}
+                    onClick={() => void handleSaveSiteContent(draftContent)}
+                    className="inline-flex items-center justify-center gap-1.5 px-5 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider cursor-pointer sm:ml-auto"
+                  >
+                    {savingContent ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4 text-[#C5A04A]" />
+                    )}
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+
+                {/* Expandable Existing Audio File Picker */}
+                {showMusicPicker && (
+                  <div className="p-4 rounded-xl bg-white border border-[#07543E]/15 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#737746]">
+                        Uploaded Audio Files ({existingAudioTracks.length})
+                      </p>
+                      {draftContent.musicAudioUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftContent((d) => ({
+                              ...d,
+                              musicAudioFileId: '',
+                              musicAudioUrl: '',
+                              musicAudioFileName: ''
+                            }));
+                            setShowMusicPicker(false);
+                          }}
+                          className="text-xs font-semibold text-red-700 hover:underline cursor-pointer"
+                        >
+                          Clear Current Audio
+                        </button>
+                      )}
+                    </div>
+
+                    {existingAudioTracks.length === 0 ? (
+                      <p className="text-xs sm:text-sm text-[#262820]/65 py-2">
+                        No audio files have been uploaded to Google Drive yet. Click &ldquo;Upload New Music&rdquo; to add one.
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-[#07543E]/10 max-h-56 overflow-y-auto rounded-lg border border-[#07543E]/12">
+                        {existingAudioTracks.map((track) => {
+                          const isSelected = draftContent.musicAudioFileId === track.driveFileId;
+                          return (
+                            <button
+                              key={track.id}
+                              type="button"
+                              onClick={() => {
+                                setDraftContent((d) => ({
+                                  ...d,
+                                  musicAudioFileId: track.driveFileId,
+                                  musicAudioUrl: track.fileUrl,
+                                  musicAudioFileName: track.title
+                                }));
+                                setShowMusicPicker(false);
+                              }}
+                              className={`w-full px-3.5 py-2.5 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                isSelected ? 'bg-[#07543E]/8' : 'hover:bg-[#FAF7F0]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Music className="w-4 h-4 text-[#C5A04A] shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-[#07543E] truncate">
+                                    {track.title}
+                                  </p>
+                                  <p className="text-xs text-[#262820]/65">
+                                    {formatFileSize(track.sizeBytes)} · {track.mimeType}
+                                  </p>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <span className="text-xs font-semibold text-[#07543E] shrink-0">
+                                  Selected
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3216,6 +3604,78 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               coupleNames={draftContent.coupleNames}
               isPreviewModal
             />
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Music Preview Modal */}
+      {showMusicPreviewModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Wedding Background Music Preview"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowMusicPreviewModal(false)}
+        >
+          <div
+            className="relative w-full max-w-md bg-[#FAF7F0] rounded-2xl border border-[#C5A04A]/50 p-6 shadow-2xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-[#737746] font-semibold">
+                  Admin Audio Preview
+                </p>
+                <h3 className="font-serif text-2xl font-semibold text-[#07543E]">
+                  Website Background Music
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMusicPreviewModal(false)}
+                aria-label="Close music preview"
+                className="w-11 h-11 rounded-full bg-white border border-[#07543E]/15 hover:bg-[#F2EBDD] text-[#07543E] flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#073B2B] border border-[#C5A04A]/55 text-[#FAF7F0] space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-lg bg-[#07543E] border border-[#C5A04A]/45 flex items-center justify-center text-[#F3E5AB] shrink-0">
+                  <Music className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-serif text-lg font-semibold text-[#FAF7F0] truncate">
+                    {draftContent.musicTitle || 'Perfect'}
+                  </p>
+                  <p className="text-xs text-[#E6CE8A] truncate">
+                    {draftContent.musicArtist || 'Ed Sheeran'}
+                  </p>
+                </div>
+              </div>
+
+              {draftContent.musicAudioUrl ? (
+                <audio
+                  controls
+                  autoPlay={false}
+                  preload="metadata"
+                  src={draftContent.musicAudioUrl}
+                  className="w-full"
+                />
+              ) : (
+                <p className="text-xs text-[#FAF7F0]/80">
+                  No audio file is currently selected. Upload an MP3, M4A, or AAC track first.
+                </p>
+              )}
+            </div>
+
+            <p className="text-xs text-[#262820]/70 leading-relaxed">
+              Visibility on public website:{' '}
+              <strong>
+                {draftContent.musicEnabled !== false ? 'Enabled (Floating player visible)' : 'Hidden'}
+              </strong>
+            </p>
           </div>
         </div>
       )}

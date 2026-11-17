@@ -91,6 +91,12 @@ service cloud.firestore {
         'puzzleEnabled',
         'puzzleImageFileId',
         'puzzleImageUrl',
+        'musicEnabled',
+        'musicTitle',
+        'musicArtist',
+        'musicAudioFileId',
+        'musicAudioUrl',
+        'musicAudioFileName',
         'updatedAt',
         'updatedByUid'
       ])
@@ -124,6 +130,12 @@ service cloud.firestore {
       && (!('puzzleEnabled' in data) || data.puzzleEnabled is bool)
       && (!('puzzleImageFileId' in data) || (data.puzzleImageFileId is string && data.puzzleImageFileId.size() <= 200))
       && (!('puzzleImageUrl' in data) || (data.puzzleImageUrl is string && data.puzzleImageUrl.size() <= 500))
+      && (!('musicEnabled' in data) || data.musicEnabled is bool)
+      && (!('musicTitle' in data) || (data.musicTitle is string && data.musicTitle.size() <= 120))
+      && (!('musicArtist' in data) || (data.musicArtist is string && data.musicArtist.size() <= 120))
+      && (!('musicAudioFileId' in data) || (data.musicAudioFileId is string && data.musicAudioFileId.size() <= 200))
+      && (!('musicAudioUrl' in data) || (data.musicAudioUrl is string && data.musicAudioUrl.size() <= 500))
+      && (!('musicAudioFileName' in data) || (data.musicAudioFileName is string && data.musicAudioFileName.size() <= 160))
       && data.updatedAt is timestamp
       && data.updatedByUid is string && data.updatedByUid == request.auth.uid;
     }
@@ -203,12 +215,17 @@ service cloud.firestore {
       ])
       && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
       && data.guestName is string && data.guestName.size() <= 80
-      && data.mediaType in ['image', 'video']
+      && data.mediaType in ['image', 'video', 'audio']
       && data.mimeType is string && data.mimeType.size() >= 3 && data.mimeType.size() <= 80
       && data.fileUrl is string && data.fileUrl.size() >= 1 && data.fileUrl.size() <= 500
       && data.storageProvider in ['google_drive', 'local_server', 'site_asset']
       && data.driveFileId is string && data.driveFileId.size() <= 200
-      && data.sizeBytes is int && data.sizeBytes > 0 && data.sizeBytes <= 104857600
+      && data.sizeBytes is int && data.sizeBytes > 0
+      && (
+        (data.mediaType == 'image' && data.sizeBytes <= 52428800) ||
+        (data.mediaType == 'audio' && data.sizeBytes <= 52428800) ||
+        (data.mediaType == 'video' && data.sizeBytes <= 104857600)
+      )
       && data.status in ['pending', 'approved', 'hidden']
       && data.createdAt is timestamp
       && data.updatedAt is timestamp;
@@ -263,7 +280,8 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && (
           isAdmin() || (
-            request.time.toMillis() >= getGalleryUnlockEpochMs()
+            incoming().mediaType in ['image', 'video']
+            && request.time.toMillis() >= getGalleryUnlockEpochMs()
             && incoming().status == 'pending'
           )
         );

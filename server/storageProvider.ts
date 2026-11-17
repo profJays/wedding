@@ -834,7 +834,7 @@ export function disconnectDriveState(): DriveConnectionStatus {
 async function resolveTargetFolder(
   accessToken: string,
   category: DriveMediaCategory,
-  mediaType: 'image' | 'video',
+  mediaType: 'image' | 'video' | 'audio',
   fromBrowserSession: boolean
 ): Promise<{ folderId: string; label: string }> {
   const state = readDriveState();
@@ -864,10 +864,25 @@ async function resolveTargetFolder(
       return { folderId: map.guestPhotosId!, label: 'Guest Uploads / Photos' };
     case 'guest_video':
       return { folderId: map.guestVideosId!, label: 'Guest Uploads / Videos' };
+    case 'admin_music': {
+      let musicFolderId = map.websiteMusicId;
+      if (!musicFolderId && map.rootId) {
+        musicFolderId = await findOrCreateSubfolder(accessToken, map.rootId, 'Website Music');
+        const nextSubfolders: DriveSubfolderMap = { ...map, websiteMusicId: musicFolderId };
+        updateDriveState({ subfolders: nextSubfolders });
+      }
+      return {
+        folderId: musicFolderId || map.adminMediaId!,
+        label: musicFolderId ? 'Website Music' : 'Admin Media'
+      };
+    }
     case 'admin_media':
     default:
       if (category === 'admin_media') {
         return { folderId: map.adminMediaId!, label: 'Admin Media' };
+      }
+      if (mediaType === 'audio') {
+        return { folderId: map.websiteMusicId || map.adminMediaId!, label: 'Website Music' };
       }
       return mediaType === 'video'
         ? { folderId: map.guestVideosId!, label: 'Guest Uploads / Videos' }
@@ -880,7 +895,7 @@ export async function storeGalleryFileInDrive(params: {
   originalName: string;
   mimeType: string;
   category: DriveMediaCategory;
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'audio';
   driveAccessTokenHeader?: string;
   isAdminUpload?: boolean;
 }): Promise<StoredMediaResult> {
@@ -1072,7 +1087,7 @@ export interface ResumableSessionRecord {
   driveUploadUri: string;
   originalName: string;
   uploadName: string;
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'audio';
   mimeType: string;
   sizeBytes: number;
   category: DriveMediaCategory;
@@ -1141,7 +1156,7 @@ export async function initiateDriveResumableSession(params: {
   mimeType: string;
   sizeBytes: number;
   category: DriveMediaCategory;
-  mediaType: 'image' | 'video';
+  mediaType: 'image' | 'video' | 'audio';
   origin?: string;
   driveAccessTokenHeader?: string;
   isAdminUpload?: boolean;

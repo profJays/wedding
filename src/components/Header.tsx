@@ -76,18 +76,17 @@ export const Header: React.FC<HeaderProps> = ({
           ))}
         </nav>
 
-        {/* Zone 3: Single primary CTA + Mobile Drawer Button */}
+        {/* Zone 3: Primary Puzzle CTA (auto-hidden if puzzle disabled) + Mobile Drawer Button */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onGoInvitation();
-            }}
-            className="inline-flex items-center justify-center px-3 sm:px-4 min-h-[44px] text-xs font-semibold tracking-[0.1em] sm:tracking-[0.14em] uppercase text-white bg-[#07543E] hover:bg-[#073B2B] transition-colors rounded-lg whitespace-nowrap shrink-0 border border-[#C5A04A]/45 cursor-pointer"
-          >
-            Digital Invite
-          </button>
+          {puzzleEnabled && (
+            <button
+              type="button"
+              onClick={() => handleSectionClick('puzzle')}
+              className="inline-flex items-center justify-center px-3 sm:px-4 min-h-[44px] text-xs font-semibold tracking-[0.1em] sm:tracking-[0.14em] uppercase text-white bg-[#07543E] hover:bg-[#073B2B] transition-colors rounded-lg whitespace-nowrap shrink-0 border border-[#C5A04A]/45 cursor-pointer"
+            >
+              Solve a puzzle
+            </button>
+          )}
 
           <button
             type="button"
@@ -118,6 +117,16 @@ export const Header: React.FC<HeaderProps> = ({
                 {item.label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onGoInvitation();
+              }}
+              className="text-left px-3 min-h-[44px] flex items-center rounded-md hover:bg-[#07543E]/8 text-[#07543E] cursor-pointer"
+            >
+              Digital Invite
+            </button>
             <button
               type="button"
               onClick={() => {

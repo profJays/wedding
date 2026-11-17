@@ -35,6 +35,12 @@
         "puzzleEnabled": { "type": "boolean" },
         "puzzleImageFileId": { "type": "string", "maxLength": 200 },
         "puzzleImageUrl": { "type": "string", "maxLength": 500 },
+        "musicEnabled": { "type": "boolean" },
+        "musicTitle": { "type": "string", "maxLength": 120 },
+        "musicArtist": { "type": "string", "maxLength": 120 },
+        "musicAudioFileId": { "type": "string", "maxLength": 200 },
+        "musicAudioUrl": { "type": "string", "maxLength": 500 },
+        "musicAudioFileName": { "type": "string", "maxLength": 160 },
         "updatedAt": { "type": "string", "format": "date-time" },
         "updatedByUid": { "type": "string", "maxLength": 128 }
       },
@@ -94,7 +100,7 @@
       "properties": {
         "title": { "type": "string", "minLength": 1, "maxLength": 160 },
         "guestName": { "type": "string", "maxLength": 80 },
-        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "mediaType": { "type": "string", "enum": ["image", "video", "audio"] },
         "mimeType": { "type": "string", "minLength": 3, "maxLength": 80 },
         "fileUrl": { "type": "string", "minLength": 1, "maxLength": 500 },
         "storageProvider": { "type": "string", "enum": ["google_drive", "local_server", "site_asset"] },
