@@ -2885,7 +2885,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Website Background Music
                   </h2>
                   <p className="text-xs sm:text-sm text-[#262820]/75 mt-0.5">
-                    Manage the floating wedding music player shown to visitors across sections (supports MP3, M4A, AAC up to 50 MB).
+                    Manage website background music (auto-starts on entering the main site, controlled via the centered header play/pause icon; supports MP3, M4A, AAC up to 50 MB).
                   </p>
                 </div>
               </div>
@@ -3673,7 +3673,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <p className="text-xs text-[#262820]/70 leading-relaxed">
               Visibility on public website:{' '}
               <strong>
-                {draftContent.musicEnabled !== false ? 'Enabled (Floating player visible)' : 'Hidden'}
+                {draftContent.musicEnabled !== false ? 'Enabled (Header control visible)' : 'Hidden'}
               </strong>
             </p>
           </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { Header } from './components/Header';
 import { WeddingWebsite } from './components/WeddingWebsite';
@@ -10,7 +10,11 @@ import { ApprovedScreen } from './components/ApprovedScreen';
 import { DressCodeModal } from './components/DressCodeModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Footer } from './components/Footer';
-import { BackgroundMusicPlayer } from './components/BackgroundMusicPlayer';
+import {
+  BackgroundMusicHandle,
+  BackgroundMusicPlayer
+} from './components/BackgroundMusicPlayer';
+import { isPlayableMusicUrl } from './services/musicPlayback';
 import { WEDDING_QUESTIONS } from './data/questions';
 import { DEFAULT_SITE_CONTENT } from './data/weddingSite';
 import { subscribeToAuth } from './services/firebase';
@@ -31,6 +35,8 @@ export default function App() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [isChallengePassed, setIsChallengePassed] = useState<boolean>(false);
   const [isFaqOpen, setIsFaqOpen] = useState<boolean>(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState<boolean>(false);
+  const musicControllerRef = useRef<BackgroundMusicHandle | null>(null);
 
   // Firebase Auth & Admin Verification
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -83,6 +89,7 @@ export default function App() {
     if (view !== 'website') {
       setHasEnteredWebsite(true);
       setView('website');
+      musicControllerRef.current?.attemptStartOnWebsiteEntry();
       let attempts = 0;
       const attemptScroll = () => {
         if (sectionId === 'top') {
@@ -124,6 +131,7 @@ export default function App() {
     clearAdminHash();
     setHasEnteredWebsite(true);
     setView('website');
+    musicControllerRef.current?.attemptStartOnWebsiteEntry();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -224,6 +232,12 @@ export default function App() {
             coupleNames={siteContent.coupleNames}
             activeView={view}
             puzzleEnabled={siteContent.puzzleEnabled !== false}
+            showMusicToggle={siteContent.musicEnabled !== false && view !== 'admin'}
+            isMusicPlaying={isMusicPlaying}
+            hasMusicTrack={Boolean(isPlayableMusicUrl(siteContent.musicAudioUrl))}
+            onToggleMusic={() => {
+              void musicControllerRef.current?.togglePlayPause();
+            }}
             onNavigateSection={handleNavigateSection}
             onGoInvitation={handleGoInvitation}
             onGoChallenge={handleGoChallenge}
@@ -317,12 +331,11 @@ export default function App() {
       )}
 
       <BackgroundMusicPlayer
+        ref={musicControllerRef}
         enabled={siteContent.musicEnabled !== false}
-        title={siteContent.musicTitle || 'Perfect'}
-        artist={siteContent.musicArtist || 'Ed Sheeran'}
         audioUrl={siteContent.musicAudioUrl || ''}
-        visible={view !== 'invitation' && view !== 'admin'}
-        shouldPause={view === 'admin'}
+        isWebsiteView={view === 'website'}
+        onPlayingChange={setIsMusicPlaying}
       />
     </div>
   );
