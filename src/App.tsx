@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { Header } from './components/Header';
 import { WeddingWebsite } from './components/WeddingWebsite';
@@ -20,9 +20,10 @@ import { DEFAULT_SITE_CONTENT } from './data/weddingSite';
 import { subscribeToAuth } from './services/firebase';
 import {
   subscribeSiteContent,
+  subscribeEnabledMusicTracks,
   checkCurrentUserIsAdmin
 } from './services/weddingRepository';
-import { AppView, AnswerOption, SiteContentData } from './types';
+import { AppView, AnswerOption, MusicTrack, SiteContentData } from './types';
 
 export default function App() {
   const [view, setView] = useState<AppView>(() =>
@@ -36,6 +37,8 @@ export default function App() {
   const [isChallengePassed, setIsChallengePassed] = useState<boolean>(false);
   const [isFaqOpen, setIsFaqOpen] = useState<boolean>(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState<boolean>(false);
+  const [enabledMusicTracks, setEnabledMusicTracks] = useState<MusicTrack[]>([]);
+  const [selectedSongId, setSelectedSongId] = useState<string>('');
   const musicControllerRef = useRef<BackgroundMusicHandle | null>(null);
 
   // Firebase Auth & Admin Verification
@@ -47,8 +50,62 @@ export default function App() {
     const unsubSite = subscribeSiteContent((data) => {
       setSiteContent(data);
     });
-    return () => unsubSite();
+    const unsubMusic = subscribeEnabledMusicTracks((tracks) => {
+      setEnabledMusicTracks(tracks);
+    });
+    return () => {
+      unsubSite();
+      unsubMusic();
+    };
   }, []);
+
+  const effectiveSongs = useMemo<MusicTrack[]>(() => {
+    const validTracks = enabledMusicTracks.filter(
+      (track) => track.enabled && isPlayableMusicUrl(track.fileUrl)
+    );
+    if (validTracks.length > 0) return validTracks;
+
+    // Seamless backward compatibility for sites configured with the legacy single-song fields
+    if (isPlayableMusicUrl(siteContent.musicAudioUrl)) {
+      return [
+        {
+          id: 'legacy-site-music',
+          title: (siteContent.musicTitle || 'Perfect').trim() || 'Perfect',
+          artist: (siteContent.musicArtist || 'Ed Sheeran').trim() || 'Ed Sheeran',
+          fileUrl: (siteContent.musicAudioUrl || '').trim(),
+          driveFileId: siteContent.musicAudioFileId || '',
+          fileName: siteContent.musicAudioFileName || '',
+          storageProvider: siteContent.musicAudioFileId ? 'google_drive' : 'site_asset',
+          enabled: true,
+          isDefault: true,
+          order: 0,
+          createdAt: null,
+          updatedAt: null,
+          updatedByUid: ''
+        }
+      ];
+    }
+    return [];
+  }, [
+    enabledMusicTracks,
+    siteContent.musicAudioUrl,
+    siteContent.musicTitle,
+    siteContent.musicArtist,
+    siteContent.musicAudioFileId,
+    siteContent.musicAudioFileName
+  ]);
+
+  const activeSong = useMemo<MusicTrack | null>(() => {
+    if (effectiveSongs.length === 0) return null;
+    if (selectedSongId) {
+      const chosen = effectiveSongs.find((t) => t.id === selectedSongId);
+      if (chosen) return chosen;
+    }
+    return effectiveSongs.find((t) => t.isDefault) || effectiveSongs[0];
+  }, [effectiveSongs, selectedSongId]);
+
+  const activeAudioUrl = activeSong?.fileUrl || '';
+  const resolvedActiveSongId = activeSong?.id || '';
 
   useEffect(() => {
     const unsubAuth = subscribeToAuth(async (user) => {
@@ -133,6 +190,25 @@ export default function App() {
     setView('website');
     musicControllerRef.current?.attemptStartOnWebsiteEntry();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Skips the challenge directly to the main wedding website without marking challenge passed or unlocking puzzle rewards
+  const handleSkipChallenge = () => {
+    clearAdminHash();
+    setHasEnteredWebsite(true);
+    setView('website');
+    musicControllerRef.current?.attemptStartOnWebsiteEntry();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectRewardSong = async (
+    track: MusicTrack
+  ): Promise<{ startedPlaying: boolean; respectPaused: boolean }> => {
+    setSelectedSongId(track.id);
+    if (!musicControllerRef.current) {
+      return { startedPlaying: false, respectPaused: false };
+    }
+    return musicControllerRef.current.selectSongTrack(track.fileUrl);
   };
 
   const handleStart = () => {
@@ -232,9 +308,10 @@ export default function App() {
             coupleNames={siteContent.coupleNames}
             activeView={view}
             puzzleEnabled={siteContent.puzzleEnabled !== false}
+            giftingEnabled={siteContent.giftingEnabled !== false}
             showMusicToggle={siteContent.musicEnabled !== false && view !== 'admin'}
             isMusicPlaying={isMusicPlaying}
-            hasMusicTrack={Boolean(isPlayableMusicUrl(siteContent.musicAudioUrl))}
+            hasMusicTrack={Boolean(isPlayableMusicUrl(activeAudioUrl))}
             onToggleMusic={() => {
               void musicControllerRef.current?.togglePlayPause();
             }}
@@ -249,6 +326,9 @@ export default function App() {
             siteContent={siteContent}
             guestName={guestName}
             isChallengePassed={isChallengePassed}
+            availableSongs={effectiveSongs}
+            activeSongId={resolvedActiveSongId}
+            onSelectSong={handleSelectRewardSong}
             onGoInvitation={handleGoInvitation}
             onGoChallenge={handleGoChallenge}
             onOpenDressCode={() => setIsFaqOpen(true)}
@@ -271,6 +351,7 @@ export default function App() {
               guestName={guestName}
               onGuestNameChange={setGuestName}
               onStart={handleStart}
+              onSkipChallenge={handleSkipChallenge}
               onReturnToWebsite={handleExploreWebsite}
               canReturnToWebsite={hasEnteredWebsite}
             />
@@ -286,6 +367,7 @@ export default function App() {
               onNext={handleNext}
               onBack={handleBack}
               canGoBack={currentQuestionIndex > 0}
+              onSkipChallenge={handleSkipChallenge}
               onReturnToWebsite={handleExploreWebsite}
               canReturnToWebsite={hasEnteredWebsite}
             />
@@ -322,6 +404,8 @@ export default function App() {
             weddingDateDisplay={siteContent.weddingDateDisplay}
             footerNote={siteContent.footerNote}
             puzzleEnabled={siteContent.puzzleEnabled !== false}
+            giftingEnabled={siteContent.giftingEnabled !== false}
+            typography={siteContent.sectionTypography?.footer}
             onNavigateSection={handleNavigateSection}
             onGoInvitation={handleGoInvitation}
             onGoChallenge={handleGoChallenge}
@@ -333,7 +417,7 @@ export default function App() {
       <BackgroundMusicPlayer
         ref={musicControllerRef}
         enabled={siteContent.musicEnabled !== false}
-        audioUrl={siteContent.musicAudioUrl || ''}
+        audioUrl={activeAudioUrl}
         isWebsiteView={view === 'website'}
         onPlayingChange={setIsMusicPlaying}
       />

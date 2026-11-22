@@ -6,6 +6,7 @@ interface WelcomeScreenProps {
   guestName: string;
   onGuestNameChange: (name: string) => void;
   onStart: () => void;
+  onSkipChallenge: () => void;
   onReturnToWebsite: () => void;
   canReturnToWebsite?: boolean;
 }
@@ -14,6 +15,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   guestName,
   onGuestNameChange,
   onStart,
+  onSkipChallenge,
   onReturnToWebsite,
   canReturnToWebsite = false
 }) => {
@@ -110,7 +112,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               <ArrowRight className="w-4 h-4 text-[#F3E5AB] group-hover:translate-x-1 transition-transform" />
             </button>
 
-            {canReturnToWebsite && (
+            {canReturnToWebsite ? (
               <button
                 type="button"
                 onClick={onReturnToWebsite}
@@ -118,6 +120,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Return to Wedding Website</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onSkipChallenge}
+                className="inline-flex items-center gap-1.5 min-h-[44px] px-4 text-xs sm:text-sm font-medium text-[#262820]/70 hover:text-[#07543E] underline-offset-4 hover:underline transition-colors cursor-pointer"
+              >
+                <span>Skip Challenge</span>
+                <ArrowRight className="w-3.5 h-3.5 opacity-75" />
               </button>
             )}
           </div>

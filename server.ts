@@ -8,7 +8,12 @@ import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import {
   DriveStorageError,
+  OAUTH_CALLBACK_PATH,
   getDriveConnectionStatus,
+  logDriveOAuthStartupDiagnostics,
+  ensureServerRefreshVerifiedIfNeeded,
+  createServerDriveOAuthUrl,
+  completeServerDriveOAuthCallback,
   resolveAccessToken,
   verifyAndSaveDriveConnection,
   ensureDriveFolderStructure,
@@ -217,6 +222,93 @@ function formatLagosTime(epochMs: number): string {
   }).format(new Date(epochMs));
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function deriveServerRequestOrigin(req: express.Request): string | undefined {
+  const forwardedHost = (req.header('x-forwarded-host') || req.get('host') || '')
+    .split(',')[0]
+    .trim();
+  if (!forwardedHost) return undefined;
+  const isLocalHost =
+    forwardedHost.startsWith('localhost') || forwardedHost.startsWith('127.0.0.1');
+  if (isLocalHost && process.env.NODE_ENV === 'production') {
+    return undefined;
+  }
+  const forwardedProto = (req.header('x-forwarded-proto') || '').split(',')[0].trim();
+  const proto =
+    forwardedProto === 'https' || forwardedProto === 'http'
+      ? forwardedProto
+      : isLocalHost
+      ? 'http'
+      : 'https';
+  return `${proto}://${forwardedHost}`;
+}
+
+function renderOAuthCallbackHtml(result: {
+  ok: boolean;
+  refreshTokenIssued: boolean;
+  message: string;
+  driveStatus: ReturnType<typeof getDriveConnectionStatus>;
+}): string {
+  // Never include any OAuth access/refresh tokens or secrets in the callback payload
+  const safePayloadJson = JSON.stringify({
+    type: 'DRIVE_OAUTH_SERVER_RESULT',
+    ok: result.ok,
+    refreshTokenIssued: result.refreshTokenIssued,
+    message: result.message,
+    driveStatus: result.driveStatus
+  }).replace(/</g, '\\u003c');
+
+  const heading = result.ok
+    ? 'Google Drive Connected'
+    : 'Google Drive Authorization Incomplete';
+  const statusColor = result.ok ? '#07543E' : '#991B1B';
+  const safeMessage = escapeHtml(result.message);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(heading)} — Mary &amp; Joseph</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #FAF7F0; color: #262820; margin: 0; padding: 32px 20px; display: flex; align-items: center; justify-content: center; min-height: 100vh; box-sizing: border-box; }
+    .card { max-width: 440px; width: 100%; background: #FFFDF8; border: 1px solid rgba(7,84,62,0.18); border-radius: 12px; padding: 28px; box-shadow: 0 8px 24px rgba(0,0,0,0.06); text-align: center; }
+    h1 { margin: 0 0 12px; font-size: 20px; color: ${statusColor}; }
+    p { margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #3D4035; }
+    button { background: #07543E; color: #FFFFFF; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${escapeHtml(heading)}</h1>
+    <p>${safeMessage}</p>
+    <button type="button" onclick="window.close()">Close Window</button>
+  </div>
+  <script>
+    (function () {
+      var payload = ${safePayloadJson};
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(payload, '*');
+        }
+      } catch (e) {}
+      if (payload.ok) {
+        setTimeout(function () { window.close(); }, 650);
+      }
+    })();
+  </script>
+</body>
+</html>`;
+}
+
 async function requireAdminRequest(
   req: express.Request,
   res: express.Response,
@@ -262,7 +354,8 @@ async function startServer() {
   });
 
   // Authoritative Server Health Check
-  app.get('/api/health', (_req, res) => {
+  app.get('/api/health', async (_req, res) => {
+    await ensureServerRefreshVerifiedIfNeeded();
     const driveStatus = getDriveConnectionStatus();
     res.json({
       ok: true,
@@ -271,6 +364,8 @@ async function startServer() {
       storageProvider: 'google_drive',
       googleDriveConfigured: driveStatus.unattendedUploadsReady,
       unattendedUploadsReady: driveStatus.unattendedUploadsReady,
+      serverRefreshStatus: driveStatus.serverRefreshStatus,
+      overallConnectionStatus: driveStatus.overallConnectionStatus,
       driveAuthState: driveStatus.authStateLabel
     });
   });
@@ -283,10 +378,15 @@ async function startServer() {
   });
 
   // Authoritative Server-Side Gallery Lock & Drive Storage Status
-  app.get('/api/gallery/status', async (_req, res) => {
+  app.get('/api/gallery/status', async (req, res) => {
     const nowMs = Date.now();
-    const { unlockISO, unlockEpochMs } = await resolveGalleryUnlockFromFirestore(firebaseCfg);
-    const driveStatus = getDriveConnectionStatus();
+    const [{ unlockISO, unlockEpochMs }] = await Promise.all([
+      resolveGalleryUnlockFromFirestore(firebaseCfg),
+      ensureServerRefreshVerifiedIfNeeded()
+    ]);
+    const driveStatus = getDriveConnectionStatus({
+      fallbackRequestOrigin: deriveServerRequestOrigin(req)
+    });
     const isUnlocked = nowMs >= unlockEpochMs;
 
     res.json({
@@ -310,12 +410,60 @@ async function startServer() {
     });
   });
 
-  // Admin: Get Google Drive Connection Status
+  // Admin: Get Google Drive Connection Status (verifies server refresh token on cold start)
   app.get('/api/drive/status', async (req, res) => {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
+    await ensureServerRefreshVerifiedIfNeeded();
     const hasBrowserSession = Boolean(req.header('X-Google-Drive-Token')?.trim());
-    res.json(getDriveConnectionStatus({ hasBrowserSession }));
+    res.json(
+      getDriveConnectionStatus({
+        hasBrowserSession,
+        fallbackRequestOrigin: deriveServerRequestOrigin(req)
+      })
+    );
+  });
+
+  // Admin: Start Server-Side Google Drive OAuth Authorization-Code Flow (canonical server redirect URI)
+  app.post('/api/drive/oauth/start', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+
+    try {
+      const { authUrl, redirectUri } = createServerDriveOAuthUrl({
+        adminUid: admin.uid,
+        adminEmail: admin.email,
+        fallbackRequestOrigin: deriveServerRequestOrigin(req)
+      });
+      res.json({ authUrl, redirectUri });
+    } catch (err) {
+      if (err instanceof DriveStorageError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+      res.status(500).json({ error: 'Unable to initiate server-side Google Drive OAuth flow.' });
+    }
+  });
+
+  // OAuth 2.0 Authorization-Code Callback (trailing-slash tolerant; exchanges code server-side)
+  app.get([OAUTH_CALLBACK_PATH, `${OAUTH_CALLBACK_PATH}/`], async (req, res) => {
+    const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const oauthError = typeof req.query.error === 'string' ? req.query.error : undefined;
+    const oauthErrorDescription =
+      typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
+
+    const result = await completeServerDriveOAuthCallback({
+      code,
+      state,
+      oauthError,
+      oauthErrorDescription,
+      callbackRoute: req.path
+    });
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(result.ok ? 200 : 400).send(renderOAuthCallbackHtml(result));
   });
 
   // Admin: Verify Browser OAuth Access Token + Target GOOGLE_DRIVE_FOLDER_ID
@@ -400,13 +548,14 @@ async function startServer() {
     }
   });
 
-  // Admin: Test Server-Side Refresh Token Exchange Directly (no token exposed in response)
+  // Admin: Test Server-Side Refresh Token Exchange Directly (strictly server refresh token only; never browser token)
   app.post('/api/drive/test-refresh', async (req, res) => {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
 
+    const hasBrowserSession = Boolean(req.header('X-Google-Drive-Token')?.trim());
     try {
-      const result = await testServerRefreshTokenConnection();
+      const result = await testServerRefreshTokenConnection({ hasBrowserSession });
       if (!result.ok) {
         res.status(result.refreshTokenConfigured ? 401 : 400).json({
           ...result,
@@ -1152,6 +1301,9 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Mary & Joseph (#mjay2026) server running on http://0.0.0.0:${PORT}`);
+    logDriveOAuthStartupDiagnostics();
+    // Proactively verify server refresh token on boot so connection status is accurate immediately
+    void ensureServerRefreshVerifiedIfNeeded().catch(() => {});
   });
 }
 

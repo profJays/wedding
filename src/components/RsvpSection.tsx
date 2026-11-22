@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { CheckCircle2, AlertCircle, Send, Loader2 } from 'lucide-react';
 import { submitGuestRsvp } from '../services/weddingRepository';
+import { SectionTypographyElements } from '../types';
+import { getSectionTypographyProps } from '../utils/typography';
 
 interface RsvpSectionProps {
   coupleNames: string;
@@ -8,6 +10,7 @@ interface RsvpSectionProps {
   maxGuestsPerRsvp: number;
   contactName: string;
   contactPhone: string;
+  typography?: SectionTypographyElements;
 }
 
 export const RsvpSection: React.FC<RsvpSectionProps> = ({
@@ -15,8 +18,10 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
   rsvpOpen,
   maxGuestsPerRsvp,
   contactName,
-  contactPhone
+  contactPhone,
+  typography
 }) => {
+  const sectionTypoProps = getSectionTypographyProps('rsvp', typography);
   const [fullName, setFullName] = useState('');
   const [attending, setAttending] = useState<'yes' | 'no' | ''>('');
   const [guestCount, setGuestCount] = useState(1);
@@ -80,17 +85,27 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
   return (
     <section
       id="rsvp"
+      {...sectionTypoProps}
       className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 bg-[#FAF7F0] border-b border-[#07543E]/10"
     >
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-10 sm:mb-12">
-          <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+          <p
+            data-typo="label"
+            className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2"
+          >
             RSVP
           </p>
-          <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-3">
+          <h2
+            data-typo="heading"
+            className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-3"
+          >
             Kindly Respond
           </h2>
-          <p className="text-base sm:text-lg text-[#262820]/80 max-w-lg mx-auto leading-relaxed">
+          <p
+            data-typo="body"
+            className="text-base sm:text-lg text-[#262820]/80 max-w-lg mx-auto leading-relaxed"
+          >
             Let {coupleNames} know if you will join the celebration in Abuja.
           </p>
           <div className="mt-6 h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent" />

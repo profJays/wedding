@@ -20,7 +20,14 @@ import {
   subscribeApprovedGalleryItems,
   uploadGalleryMediaFiles
 } from '../services/weddingRepository';
-import { GalleryItem, GalleryServerStatus } from '../types';
+import {
+  GalleryItem,
+  GalleryServerStatus,
+  SectionTypographyElements,
+  SlideshowSlideItem
+} from '../types';
+import { GallerySlideshow } from './GallerySlideshow';
+import { getSectionTypographyProps } from '../utils/typography';
 import {
   FILE_INPUT_ACCEPT,
   MAX_BATCH_FILES,
@@ -35,6 +42,11 @@ import {
 interface GallerySectionProps {
   galleryPublicEnabled: boolean;
   galleryUnlockISO: string;
+  coupleNames?: string;
+  slideshowItems?: SlideshowSlideItem[];
+  slideshowAutoplay?: boolean;
+  slideshowIntervalMs?: number;
+  typography?: SectionTypographyElements;
 }
 
 interface UnlockCountdown {
@@ -65,8 +77,14 @@ function computeCountdownFromServerOffset(
 
 export const GallerySection: React.FC<GallerySectionProps> = ({
   galleryPublicEnabled,
-  galleryUnlockISO
+  galleryUnlockISO,
+  coupleNames = 'Mary & Joseph',
+  slideshowItems = [],
+  slideshowAutoplay = true,
+  slideshowIntervalMs = 5000,
+  typography
 }) => {
+  const sectionTypoProps = getSectionTypographyProps('gallery', typography);
   const [serverStatus, setServerStatus] = useState<GalleryServerStatus | null>(null);
   const [serverOffsetMs, setServerOffsetMs] = useState<number>(0);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -316,31 +334,72 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
     await executeUploadBatch(failedEntries);
   };
 
+  const enabledSlides = slideshowItems.filter(
+    (item) => item.enabled !== false && Boolean((item.fileUrl || '').trim())
+  );
+
   return (
     <section
       id="gallery"
+      {...sectionTypoProps}
       className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 bg-[#F2EBDD] border-b border-[#07543E]/10"
     >
       <div className="max-w-5xl mx-auto">
         <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-12">
-          <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+          <p
+            data-typo="label"
+            className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2"
+          >
             Wedding Gallery
           </p>
-          <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-4">
+          <h2
+            data-typo="heading"
+            className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-4"
+          >
             Moments Shared With Us
           </h2>
-          <p className="text-base sm:text-lg text-[#262820]/80 leading-relaxed">
+          <p
+            data-typo="body"
+            className="text-base sm:text-lg text-[#262820]/80 leading-relaxed"
+          >
             {AUTHORITATIVE_GALLERY_LOCK_MESSAGE}
           </p>
           <div className="mt-6 h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent" />
         </div>
 
-        {statusError && (
-          <div className="max-w-xl mx-auto mb-6 p-4 rounded-lg bg-[#FFFDF8] border border-[#C5A04A]/40 text-sm text-[#262820]/85 flex items-center gap-2.5 justify-center">
-            <AlertCircle className="w-4 h-4 text-[#C5A04A] shrink-0" />
-            <span>{statusError}</span>
-          </div>
+        {/* PART 1: WEDDING HIGHLIGHTS (Admin-Curated Picture Slideshow) */}
+        {enabledSlides.length > 0 && (
+          <GallerySlideshow
+            slides={enabledSlides}
+            autoplay={slideshowAutoplay}
+            intervalMs={slideshowIntervalMs}
+            coupleNames={coupleNames}
+          />
         )}
+
+        {/* PART 2: CAPTURED BY YOU (Preserved Guest Photo & Video Upload + Gallery) */}
+        <div className={enabledSlides.length > 0 ? 'pt-10 border-t border-[#07543E]/12' : ''}>
+          <div className="text-center max-w-xl mx-auto mb-8">
+            <p
+              data-typo="label"
+              className="text-xs uppercase tracking-[0.22em] text-[#737746] font-semibold mb-1.5"
+            >
+              Guest Photos &amp; Videos
+            </p>
+            <h3
+              data-typo="subheading"
+              className="font-serif text-2xl sm:text-4xl font-semibold text-[#07543E]"
+            >
+              Captured by You
+            </h3>
+          </div>
+
+          {statusError && (
+            <div className="max-w-xl mx-auto mb-6 p-4 rounded-lg bg-[#FFFDF8] border border-[#C5A04A]/40 text-sm text-[#262820]/85 flex items-center gap-2.5 justify-center">
+              <AlertCircle className="w-4 h-4 text-[#C5A04A] shrink-0" />
+              <span>{statusError}</span>
+            </div>
+          )}
 
         {/* BEFORE THE WEDDING DAY: Server-Enforced Locked Upload Card + Gallery Unlock Countdown */}
         {!isServerUnlocked ? (
@@ -741,6 +800,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Lightbox Modal for Full-Screen Image Viewing */}

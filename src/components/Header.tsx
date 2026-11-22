@@ -6,6 +6,7 @@ interface HeaderProps {
   coupleNames: string;
   activeView: AppView;
   puzzleEnabled?: boolean;
+  giftingEnabled?: boolean;
   showMusicToggle?: boolean;
   isMusicPlaying?: boolean;
   hasMusicTrack?: boolean;
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   coupleNames,
   activeView,
   puzzleEnabled = true,
+  giftingEnabled = true,
   showMusicToggle = false,
   isMusicPlaying = false,
   hasMusicTrack = false,
@@ -32,11 +34,12 @@ export const Header: React.FC<HeaderProps> = ({
   const leftNavItems = [
     { id: 'welcome', label: 'Welcome' },
     { id: 'story', label: 'Our Story' },
-    { id: 'schedule', label: 'Schedule' }
+    { id: 'schedule', label: 'Schedule' },
+    ...(puzzleEnabled ? [{ id: 'puzzle', label: 'Puzzle' }] : [])
   ];
 
   const rightNavItems = [
-    ...(puzzleEnabled ? [{ id: 'puzzle', label: 'Puzzle' }] : []),
+    ...(giftingEnabled ? [{ id: 'gifting', label: 'Gifting' }] : []),
     { id: 'faq', label: 'Q&A' },
     { id: 'rsvp', label: 'RSVP' },
     { id: 'gallery', label: 'Gallery' }

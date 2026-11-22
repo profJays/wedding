@@ -195,5 +195,58 @@ export const DEFAULT_SITE_CONTENT: SiteContentData = {
   musicArtist: 'Ed Sheeran',
   musicAudioFileId: '',
   musicAudioUrl: '',
-  musicAudioFileName: ''
+  musicAudioFileName: '',
+  giftingEnabled: true,
+  giftingHeading: 'Gifting & Support',
+  giftingIntro:
+    'Your presence is the greatest gift. If you would still love to bless our new beginning, you may use the details below. Thank you for your love and generosity.',
+  giftingClosing: 'Thank you for celebrating with us.',
+  giftingAccountName: 'Joseph John',
+  giftingBankName: 'Opay',
+  giftingAccountNumber: '8065013009',
+  sectionTypography: {},
+  slideshowAutoplay: true,
+  slideshowIntervalMs: 5000,
+  slideshowItems: [
+    {
+      id: 'slide-hero',
+      title: 'Mary & Joseph',
+      caption: 'Celebrating our love story in Abuja',
+      fileUrl: WEDDING_PHOTOS.hero.src,
+      driveFileId: '',
+      storageProvider: 'site_asset',
+      enabled: true,
+      order: 0
+    },
+    {
+      id: 'slide-story',
+      title: 'Our Journey Together',
+      caption: 'Where two hearts found home in each other',
+      fileUrl: WEDDING_PHOTOS.story.src,
+      driveFileId: '',
+      storageProvider: 'site_asset',
+      enabled: true,
+      order: 1
+    },
+    {
+      id: 'slide-schedule',
+      title: 'December 2026',
+      caption: 'Ivana Events and Amusement Center, Abuja',
+      fileUrl: WEDDING_PHOTOS.schedule.src,
+      driveFileId: '',
+      storageProvider: 'site_asset',
+      enabled: true,
+      order: 2
+    },
+    {
+      id: 'slide-qa',
+      title: 'Forever Begins',
+      caption: 'Saturday, 12 December 2026 · #mjay2026',
+      fileUrl: WEDDING_PHOTOS.qa.src,
+      driveFileId: '',
+      storageProvider: 'site_asset',
+      enabled: true,
+      order: 3
+    }
+  ]
 };

@@ -14,6 +14,7 @@ import {
 
 export interface BackgroundMusicHandle {
   attemptStartOnWebsiteEntry: () => void;
+  selectSongTrack: (audioUrl: string) => Promise<{ startedPlaying: boolean; respectPaused: boolean }>;
   togglePlayPause: () => Promise<void>;
 }
 
@@ -94,9 +95,9 @@ export const BackgroundMusicPlayer = forwardRef<
   );
 
   const startPlayback = useCallback(
-    async (url: string) => {
+    async (url: string): Promise<boolean> => {
       const audio = audioRef.current;
-      if (!audio || !url) return;
+      if (!audio || !url) return false;
 
       if (audio.getAttribute('src') !== url) {
         audio.src = url;
@@ -107,9 +108,11 @@ export const BackgroundMusicPlayer = forwardRef<
       try {
         await audio.play();
         notifyPlaying(true);
+        return true;
       } catch {
         // Browser autoplay blocked or media not ready yet: stay silently ready for header Play click
         notifyPlaying(false);
+        return false;
       }
     },
     [notifyPlaying]
@@ -127,14 +130,14 @@ export const BackgroundMusicPlayer = forwardRef<
     }
 
     if (audio.getAttribute('src') !== cleanUrl) {
-      const shouldResumeNewTrack =
-        !audio.paused && isWebsiteViewRef.current && !userPausedRef.current;
+      const shouldPlaySwitchedTrack =
+        isWebsiteViewRef.current && !userPausedRef.current;
       pauseSilently(false);
       audio.src = cleanUrl;
       audio.load();
       entryAttemptedForUrlRef.current = null;
 
-      if (shouldResumeNewTrack) {
+      if (shouldPlaySwitchedTrack) {
         entryAttemptedForUrlRef.current = cleanUrl;
         void startPlayback(cleanUrl);
       }
@@ -173,7 +176,6 @@ export const BackgroundMusicPlayer = forwardRef<
     ref,
     () => ({
       attemptStartOnWebsiteEntry: () => {
-        // Refresh from sessionStorage in case another tab/routine updated it
         userPausedRef.current = readUserPausedPreference(getSessionStorageSafe());
         const canAutoPlay = shouldAttemptWebsiteAutoPlay({
           enabled: enabledRef.current,
@@ -193,6 +195,30 @@ export const BackgroundMusicPlayer = forwardRef<
         }
         void startPlayback(cleanUrlRef.current);
       },
+      selectSongTrack: async (nextAudioUrl: string) => {
+        const cleanNext = isPlayableMusicUrl(nextAudioUrl);
+        const audio = audioRef.current;
+        userPausedRef.current = readUserPausedPreference(getSessionStorageSafe());
+        if (!enabledRef.current || !cleanNext || !audio) {
+          return { startedPlaying: false, respectPaused: userPausedRef.current };
+        }
+
+        if (audio.getAttribute('src') !== cleanNext) {
+          pauseSilently(false);
+          audio.src = cleanNext;
+          audio.load();
+        }
+        cleanUrlRef.current = cleanNext;
+
+        // Respect guest's deliberate pause preference
+        if (userPausedRef.current) {
+          return { startedPlaying: false, respectPaused: true };
+        }
+
+        entryAttemptedForUrlRef.current = cleanNext;
+        const started = await startPlayback(cleanNext);
+        return { startedPlaying: started, respectPaused: false };
+      },
       togglePlayPause: async () => {
         const audio = audioRef.current;
         if (!audio || !hasPlayableAudioRef.current || !cleanUrlRef.current) {
@@ -211,7 +237,7 @@ export const BackgroundMusicPlayer = forwardRef<
         await startPlayback(cleanUrlRef.current);
       }
     }),
-    [notifyPlaying, setUserPaused, startPlayback]
+    [notifyPlaying, pauseSilently, setUserPaused, startPlayback]
   );
 
   return (

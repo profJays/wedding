@@ -34,110 +34,139 @@ service cloud.firestore {
       );
     }
 
-    // SiteContent validation
+    // Slideshow fields validation (used by safe partial slideshow updates on siteContent/main)
+    function isValidSlideshowFields(data) {
+      return (!('slideshowAutoplay' in data) || data.slideshowAutoplay is bool)
+        && (!('slideshowIntervalMs' in data) || (data.slideshowIntervalMs is int && data.slideshowIntervalMs >= 2000 && data.slideshowIntervalMs <= 30000))
+        && (!('slideshowItems' in data) || (data.slideshowItems is list && data.slideshowItems.size() <= 30 && (data.slideshowItems.size() == 0 || data.slideshowItems[0] is map)));
+    }
+
+    function isValidSlideshowPartialUpdate(data, prev) {
+      return data.diff(prev).affectedKeys().hasOnly([
+          'slideshowAutoplay',
+          'slideshowIntervalMs',
+          'slideshowItems',
+          'updatedAt',
+          'updatedByUid'
+        ])
+        && isValidSlideshowFields(data)
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time
+        && data.updatedByUid is string
+        && data.updatedByUid == request.auth.uid;
+    }
+
+    // Full SiteContent validation (engineered to stay safely under Firestore's 1,000-expression ceiling)
+    function isValidSiteContentCore(data) {
+      return data.coupleNames is string && data.coupleNames.size() >= 2 && data.coupleNames.size() <= 100
+        && data.brideName is string && data.brideName.size() <= 50
+        && data.groomName is string && data.groomName.size() <= 50
+        && data.hashtag is string && data.hashtag.size() <= 40
+        && data.weddingDateDisplay is string && data.weddingDateDisplay.size() <= 80
+        && data.ceremonyTargetISO is string && data.ceremonyTargetISO.size() <= 40
+        && data.galleryUnlockISO is string && data.galleryUnlockISO.size() <= 40
+        && data.galleryUnlockEpochMs is int && data.galleryUnlockEpochMs > 0
+        && data.mainVenue is string && data.mainVenue.size() <= 240
+        && data.heroImageUrl is string && data.heroImageUrl.size() >= 1 && data.heroImageUrl.size() <= 500
+        && data.contactName is string && data.contactName.size() <= 80
+        && data.contactPhone is string && data.contactPhone.size() <= 40
+        && data.welcomeHeading is string && data.welcomeHeading.size() <= 160
+        && data.welcomeParagraphs is list && data.welcomeParagraphs.size() >= 1 && data.welcomeParagraphs.size() <= 12 && data.welcomeParagraphs[0] is string
+        && data.welcomeSignOff is string && data.welcomeSignOff.size() <= 120
+        && data.storyHeading is string && data.storyHeading.size() <= 160
+        && data.storyParagraphs is list && data.storyParagraphs.size() >= 1 && data.storyParagraphs.size() <= 20 && data.storyParagraphs[0] is string
+        && data.coupleQas is list && data.coupleQas.size() <= 30 && (data.coupleQas.size() == 0 || data.coupleQas[0] is map)
+        && data.scheduleEvents is list && data.scheduleEvents.size() <= 20 && (data.scheduleEvents.size() == 0 || data.scheduleEvents[0] is map)
+        && data.guestFaqs is list && data.guestFaqs.size() <= 30 && (data.guestFaqs.size() == 0 || data.guestFaqs[0] is map)
+        && data.footerNote is string && data.footerNote.size() <= 200
+        && data.rsvpOpen is bool
+        && data.maxGuestsPerRsvp is int && data.maxGuestsPerRsvp >= 1 && data.maxGuestsPerRsvp <= 10
+        && data.galleryPublicEnabled is bool;
+    }
+
+    function isValidSiteContentExtensions(data) {
+      return data.themePrimaryHex is string && data.themePrimaryHex.size() <= 20
+        && data.themeAccentHex is string && data.themeAccentHex.size() <= 20
+        && data.themeGoldHex is string && data.themeGoldHex.size() <= 20
+        && data.puzzleEnabled is bool
+        && data.puzzleImageFileId is string && data.puzzleImageFileId.size() <= 200
+        && data.puzzleImageUrl is string && data.puzzleImageUrl.size() <= 500
+        && data.musicEnabled is bool
+        && data.musicTitle is string && data.musicTitle.size() <= 120
+        && data.musicArtist is string && data.musicArtist.size() <= 120
+        && data.musicAudioFileId is string && data.musicAudioFileId.size() <= 200
+        && data.musicAudioUrl is string && data.musicAudioUrl.size() <= 500
+        && data.musicAudioFileName is string && data.musicAudioFileName.size() <= 160
+        && data.giftingEnabled is bool
+        && data.giftingHeading is string && data.giftingHeading.size() <= 120
+        && data.giftingIntro is string && data.giftingIntro.size() <= 500
+        && data.giftingClosing is string && data.giftingClosing.size() <= 200
+        && data.giftingAccountName is string && data.giftingAccountName.size() <= 120
+        && data.giftingBankName is string && data.giftingBankName.size() <= 120
+        && data.giftingAccountNumber is string && data.giftingAccountNumber.size() <= 60
+        && data.sectionTypography is map && data.sectionTypography.size() <= 12
+        && data.slideshowAutoplay is bool
+        && data.slideshowIntervalMs is int && data.slideshowIntervalMs >= 2000 && data.slideshowIntervalMs <= 30000
+        && data.slideshowItems is list && data.slideshowItems.size() <= 30 && (data.slideshowItems.size() == 0 || data.slideshowItems[0] is map)
+        && data.updatedAt is timestamp
+        && data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
     function isValidSiteContent(data) {
-      return data.keys().hasAll([
-        'coupleNames',
-        'brideName',
-        'groomName',
-        'hashtag',
-        'weddingDateDisplay',
-        'ceremonyTargetISO',
-        'galleryUnlockISO',
-        'galleryUnlockEpochMs',
-        'mainVenue',
-        'heroImageUrl',
-        'welcomeHeading',
-        'welcomeParagraphs',
-        'welcomeSignOff',
-        'storyHeading',
-        'storyParagraphs',
-        'coupleQas',
-        'scheduleEvents',
-        'guestFaqs',
-        'rsvpOpen',
-        'maxGuestsPerRsvp',
-        'galleryPublicEnabled',
-        'updatedAt',
-        'updatedByUid'
-      ]) && data.keys().hasOnly([
-        'coupleNames',
-        'brideName',
-        'groomName',
-        'hashtag',
-        'weddingDateDisplay',
-        'ceremonyTargetISO',
-        'galleryUnlockISO',
-        'galleryUnlockEpochMs',
-        'mainVenue',
-        'heroImageUrl',
-        'contactName',
-        'contactPhone',
-        'welcomeHeading',
-        'welcomeParagraphs',
-        'welcomeSignOff',
-        'storyHeading',
-        'storyParagraphs',
-        'coupleQas',
-        'scheduleEvents',
-        'guestFaqs',
-        'footerNote',
-        'rsvpOpen',
-        'maxGuestsPerRsvp',
-        'galleryPublicEnabled',
-        'themePrimaryHex',
-        'themeAccentHex',
-        'themeGoldHex',
-        'puzzleEnabled',
-        'puzzleImageFileId',
-        'puzzleImageUrl',
-        'musicEnabled',
-        'musicTitle',
-        'musicArtist',
-        'musicAudioFileId',
-        'musicAudioUrl',
-        'musicAudioFileName',
-        'updatedAt',
-        'updatedByUid'
-      ])
-      && data.coupleNames is string && data.coupleNames.size() >= 2 && data.coupleNames.size() <= 100
-      && data.brideName is string && data.brideName.size() >= 1 && data.brideName.size() <= 50
-      && data.groomName is string && data.groomName.size() >= 1 && data.groomName.size() <= 50
-      && data.hashtag is string && data.hashtag.size() >= 2 && data.hashtag.size() <= 40
-      && data.weddingDateDisplay is string && data.weddingDateDisplay.size() >= 2 && data.weddingDateDisplay.size() <= 80
-      && data.ceremonyTargetISO is string && data.ceremonyTargetISO.size() >= 10 && data.ceremonyTargetISO.size() <= 40
-      && data.galleryUnlockISO is string && data.galleryUnlockISO.size() >= 10 && data.galleryUnlockISO.size() <= 40
-      && data.galleryUnlockEpochMs is int && data.galleryUnlockEpochMs > 0
-      && data.mainVenue is string && data.mainVenue.size() >= 2 && data.mainVenue.size() <= 240
-      && data.heroImageUrl is string && data.heroImageUrl.size() >= 1 && data.heroImageUrl.size() <= 500
-      && (!('contactName' in data) || (data.contactName is string && data.contactName.size() <= 80))
-      && (!('contactPhone' in data) || (data.contactPhone is string && data.contactPhone.size() <= 40))
-      && data.welcomeHeading is string && data.welcomeHeading.size() >= 1 && data.welcomeHeading.size() <= 160
-      && data.welcomeParagraphs is list && data.welcomeParagraphs.size() >= 1 && data.welcomeParagraphs.size() <= 12 && data.welcomeParagraphs[0] is string
-      && data.welcomeSignOff is string && data.welcomeSignOff.size() >= 1 && data.welcomeSignOff.size() <= 120
-      && data.storyHeading is string && data.storyHeading.size() >= 1 && data.storyHeading.size() <= 160
-      && data.storyParagraphs is list && data.storyParagraphs.size() >= 1 && data.storyParagraphs.size() <= 20 && data.storyParagraphs[0] is string
-      && data.coupleQas is list && data.coupleQas.size() <= 30 && (data.coupleQas.size() == 0 || data.coupleQas[0] is map)
-      && data.scheduleEvents is list && data.scheduleEvents.size() <= 20 && (data.scheduleEvents.size() == 0 || data.scheduleEvents[0] is map)
-      && data.guestFaqs is list && data.guestFaqs.size() <= 30 && (data.guestFaqs.size() == 0 || data.guestFaqs[0] is map)
-      && (!('footerNote' in data) || (data.footerNote is string && data.footerNote.size() <= 200))
-      && data.rsvpOpen is bool
-      && data.maxGuestsPerRsvp is int && data.maxGuestsPerRsvp >= 1 && data.maxGuestsPerRsvp <= 10
-      && data.galleryPublicEnabled is bool
-      && (!('themePrimaryHex' in data) || (data.themePrimaryHex is string && data.themePrimaryHex.size() <= 20))
-      && (!('themeAccentHex' in data) || (data.themeAccentHex is string && data.themeAccentHex.size() <= 20))
-      && (!('themeGoldHex' in data) || (data.themeGoldHex is string && data.themeGoldHex.size() <= 20))
-      && (!('puzzleEnabled' in data) || data.puzzleEnabled is bool)
-      && (!('puzzleImageFileId' in data) || (data.puzzleImageFileId is string && data.puzzleImageFileId.size() <= 200))
-      && (!('puzzleImageUrl' in data) || (data.puzzleImageUrl is string && data.puzzleImageUrl.size() <= 500))
-      && (!('musicEnabled' in data) || data.musicEnabled is bool)
-      && (!('musicTitle' in data) || (data.musicTitle is string && data.musicTitle.size() <= 120))
-      && (!('musicArtist' in data) || (data.musicArtist is string && data.musicArtist.size() <= 120))
-      && (!('musicAudioFileId' in data) || (data.musicAudioFileId is string && data.musicAudioFileId.size() <= 200))
-      && (!('musicAudioUrl' in data) || (data.musicAudioUrl is string && data.musicAudioUrl.size() <= 500))
-      && (!('musicAudioFileName' in data) || (data.musicAudioFileName is string && data.musicAudioFileName.size() <= 160))
-      && data.updatedAt is timestamp
-      && data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+      return data.keys().size() == 49
+        && data.keys().hasOnly([
+          'coupleNames',
+          'brideName',
+          'groomName',
+          'hashtag',
+          'weddingDateDisplay',
+          'ceremonyTargetISO',
+          'galleryUnlockISO',
+          'galleryUnlockEpochMs',
+          'mainVenue',
+          'heroImageUrl',
+          'contactName',
+          'contactPhone',
+          'welcomeHeading',
+          'welcomeParagraphs',
+          'welcomeSignOff',
+          'storyHeading',
+          'storyParagraphs',
+          'coupleQas',
+          'scheduleEvents',
+          'guestFaqs',
+          'footerNote',
+          'rsvpOpen',
+          'maxGuestsPerRsvp',
+          'galleryPublicEnabled',
+          'themePrimaryHex',
+          'themeAccentHex',
+          'themeGoldHex',
+          'puzzleEnabled',
+          'puzzleImageFileId',
+          'puzzleImageUrl',
+          'musicEnabled',
+          'musicTitle',
+          'musicArtist',
+          'musicAudioFileId',
+          'musicAudioUrl',
+          'musicAudioFileName',
+          'giftingEnabled',
+          'giftingHeading',
+          'giftingIntro',
+          'giftingClosing',
+          'giftingAccountName',
+          'giftingBankName',
+          'giftingAccountNumber',
+          'sectionTypography',
+          'slideshowAutoplay',
+          'slideshowIntervalMs',
+          'slideshowItems',
+          'updatedAt',
+          'updatedByUid'
+        ])
+        && isValidSiteContentCore(data)
+        && isValidSiteContentExtensions(data);
     }
 
     // RSVP validation
@@ -231,6 +260,74 @@ service cloud.firestore {
       && data.updatedAt is timestamp;
     }
 
+    // Music Track validation
+    function isValidMusicTrack(data) {
+      return data.keys().hasAll([
+        'title',
+        'artist',
+        'fileUrl',
+        'driveFileId',
+        'fileName',
+        'storageProvider',
+        'enabled',
+        'isDefault',
+        'order',
+        'createdAt',
+        'updatedAt',
+        'updatedByUid'
+      ]) && data.keys().hasOnly([
+        'title',
+        'artist',
+        'fileUrl',
+        'driveFileId',
+        'fileName',
+        'storageProvider',
+        'enabled',
+        'isDefault',
+        'order',
+        'createdAt',
+        'updatedAt',
+        'updatedByUid'
+      ])
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+      && data.artist is string && data.artist.size() >= 1 && data.artist.size() <= 120
+      && data.fileUrl is string && data.fileUrl.size() >= 1 && data.fileUrl.size() <= 500
+      && data.driveFileId is string && data.driveFileId.size() <= 200
+      && data.fileName is string && data.fileName.size() <= 160
+      && data.storageProvider in ['google_drive', 'local_server', 'site_asset']
+      && data.enabled is bool
+      && data.isDefault is bool
+      && data.order is int && data.order >= 0 && data.order <= 1000
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp
+      && data.updatedByUid is string && data.updatedByUid == request.auth.uid;
+    }
+
+    // Private Guest Song Suggestion validation
+    function isValidSongSuggestion(data) {
+      return data.keys().hasAll([
+        'title',
+        'artist',
+        'normalizedKey',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ]) && data.keys().hasOnly([
+        'title',
+        'artist',
+        'normalizedKey',
+        'status',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+      && data.artist is string && data.artist.size() <= 120
+      && data.normalizedKey is string && data.normalizedKey.size() >= 1 && data.normalizedKey.size() <= 200
+      && data.status in ['new', 'reviewed', 'added', 'declined']
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
     function isValidAdminUser(data, adminUid) {
       return data.keys().hasAll(['uid', 'email', 'displayName', 'addedAt', 'addedBy'])
         && data.keys().hasOnly(['uid', 'email', 'displayName', 'addedAt', 'addedBy'])
@@ -241,14 +338,25 @@ service cloud.firestore {
         && data.addedBy is string && data.addedBy == request.auth.uid;
     }
 
-    // 1. Site Content & Settings
+    // 1. Site Content & Settings (Public read for wedding site; strictly admin-only writes with safe partial slideshow updates)
     match /siteContent/{contentId} {
       allow get: if isValidId(contentId);
       allow list: if isAdmin();
-      allow create, update: if isAdmin()
+      allow create: if isSignedIn()
         && isValidId(contentId)
+        && isAdmin()
         && isValidSiteContent(incoming())
         && incoming().updatedAt == request.time;
+      allow update: if isSignedIn()
+        && isValidId(contentId)
+        && isAdmin()
+        && (
+          isValidSlideshowPartialUpdate(incoming(), existing())
+          || (
+            isValidSiteContent(incoming())
+            && incoming().updatedAt == request.time
+          )
+        );
       allow delete: if isAdmin() && isValidId(contentId);
     }
 
@@ -294,7 +402,55 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(itemId);
     }
 
-    // 4. Admins RBAC registry
+    // 4. Music Library Tracks (Public reads strictly enabled tracks; full management for verified Admin)
+    match /musicTracks/{trackId} {
+      allow get: if isValidId(trackId) && (isAdmin() || existing().enabled == true);
+      allow list: if isAdmin() || resource.data.enabled == true;
+      allow create: if isAdmin()
+        && isValidId(trackId)
+        && isValidMusicTrack(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(trackId)
+        && isValidMusicTrack(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title',
+          'artist',
+          'fileUrl',
+          'driveFileId',
+          'fileName',
+          'storageProvider',
+          'enabled',
+          'isDefault',
+          'order',
+          'updatedAt',
+          'updatedByUid'
+        ]);
+      allow delete: if isAdmin() && isValidId(trackId);
+    }
+
+    // 5. Private Guest Song Suggestions (Zero public read/list; write-once create for guests; admin moderation only)
+    match /songSuggestions/{suggestionId} {
+      allow get: if isAdmin() && isValidId(suggestionId);
+      allow list: if isAdmin();
+      allow create: if isValidId(suggestionId)
+        && isValidSongSuggestion(incoming())
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(suggestionId)
+        && isValidSongSuggestion(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(suggestionId);
+    }
+
+    // 6. Admins RBAC registry
     match /admins/{adminUid} {
       allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
       allow list: if isAdmin();

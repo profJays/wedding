@@ -17,11 +17,13 @@ import {
   AUTHORITATIVE_QA_INTRO,
   WEDDING_PHOTOS
 } from '../data/weddingSite';
-import { SiteContentData } from '../types';
+import { MusicTrack, SiteContentData } from '../types';
 import { Crest } from './Crest';
 import { RsvpSection } from './RsvpSection';
 import { GallerySection } from './GallerySection';
 import { WeddingPhotoPuzzleSection } from './WeddingPhotoPuzzleSection';
+import { GiftingSection } from './GiftingSection';
+import { getSectionTypographyProps } from '../utils/typography';
 import {
   buildMapSearchUrl,
   buildDirectionsUrl,
@@ -33,6 +35,11 @@ interface WeddingWebsiteProps {
   siteContent: SiteContentData;
   guestName: string;
   isChallengePassed: boolean;
+  availableSongs: MusicTrack[];
+  activeSongId: string;
+  onSelectSong: (
+    track: MusicTrack
+  ) => Promise<{ startedPlaying: boolean; respectPaused: boolean }>;
   onGoInvitation: () => void;
   onGoChallenge: () => void;
   onOpenDressCode: () => void;
@@ -108,10 +115,18 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
   siteContent,
   guestName,
   isChallengePassed,
+  availableSongs,
+  activeSongId,
+  onSelectSong,
   onGoInvitation,
   onGoChallenge,
   onOpenDressCode
 }) => {
+  const welcomeTypoProps = getSectionTypographyProps('welcome', siteContent.sectionTypography?.welcome);
+  const storyTypoProps = getSectionTypographyProps('story', siteContent.sectionTypography?.story);
+  const scheduleTypoProps = getSectionTypographyProps('schedule', siteContent.sectionTypography?.schedule);
+  const faqTypoProps = getSectionTypographyProps('faq', siteContent.sectionTypography?.faq);
+
   const [countdown, setCountdown] = useState<CountdownTime>(() =>
     getCountdown(siteContent.ceremonyTargetISO)
   );
@@ -314,6 +329,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       <section
         id="welcome"
+        {...welcomeTypoProps}
         className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 border-b border-[#07543E]/10 bg-[#FAF7F0]"
       >
         <div className="max-w-2xl mx-auto text-center">
@@ -321,11 +337,17 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <Crest size="md" />
           </div>
 
-          <p className="text-xs sm:text-sm uppercase tracking-[0.24em] text-[#737746] font-semibold mb-3">
+          <p
+            data-typo="label"
+            className="text-xs sm:text-sm uppercase tracking-[0.24em] text-[#737746] font-semibold mb-3"
+          >
             Welcome · {siteContent.hashtag}
           </p>
 
-          <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-8">
+          <h2
+            data-typo="heading"
+            className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-8"
+          >
             {siteContent.welcomeHeading}
           </h2>
 
@@ -335,6 +357,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             {siteContent.welcomeParagraphs.map((para, idx) => (
               <p
                 key={idx}
+                data-typo="body"
                 className={
                   idx === 0
                     ? 'first-letter:text-5xl first-letter:font-serif first-letter:font-semibold first-letter:text-[#07543E] first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:leading-none sm:first-letter:float-none sm:first-letter:text-lg sm:first-letter:font-normal sm:first-letter:mr-0 sm:first-letter:mt-0'
@@ -346,7 +369,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             ))}
           </div>
 
-          <p className="mt-9 font-serif italic text-xl sm:text-2xl text-[#07543E] whitespace-pre-line">
+          <p
+            data-typo="caption"
+            className="mt-9 font-serif italic text-xl sm:text-2xl text-[#07543E] whitespace-pre-line"
+          >
             {siteContent.welcomeSignOff}
           </p>
 
@@ -359,14 +385,21 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       <section
         id="story"
+        {...storyTypoProps}
         className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 border-b border-[#07543E]/10 bg-[#F2EBDD]"
       >
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl mb-10 sm:mb-14">
-            <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+            <p
+              data-typo="label"
+              className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2"
+            >
               Our Story
             </p>
-            <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight">
+            <h2
+              data-typo="heading"
+              className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight"
+            >
               {siteContent.storyHeading}
             </h2>
           </div>
@@ -388,6 +421,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                   {siteContent.storyParagraphs.map((para, idx) => (
                     <p
                       key={idx}
+                      data-typo="body"
                       className={
                         idx === 0
                           ? 'first-letter:text-5xl first-letter:font-serif first-letter:font-semibold first-letter:text-[#07543E] first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:leading-none'
@@ -407,14 +441,23 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             <div className="pt-8 border-t border-[#07543E]/12">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
                 <div>
-                  <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-1.5">
+                  <p
+                    data-typo="label"
+                    className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-1.5"
+                  >
                     Between the Two of Us
                   </p>
-                  <h3 className="font-serif text-2xl sm:text-4xl font-semibold text-[#07543E]">
+                  <h3
+                    data-typo="subheading"
+                    className="font-serif text-2xl sm:text-4xl font-semibold text-[#07543E]"
+                  >
                     Couple Q&amp;A
                   </h3>
                 </div>
-                <p className="text-sm sm:text-base text-[#262820]/70 font-serif italic">
+                <p
+                  data-typo="caption"
+                  className="text-sm sm:text-base text-[#262820]/70 font-serif italic"
+                >
                   A few light-hearted notes from {siteContent.coupleNames}
                 </p>
               </div>
@@ -439,7 +482,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                           <span className="font-mono text-xs text-[#C5A04A] font-semibold shrink-0 tabular-nums">
                             {String(idx + 1).padStart(2, '0')}
                           </span>
-                          <h4 className="font-serif text-lg sm:text-xl font-semibold text-[#07543E] group-hover:text-[#073B2B] leading-snug">
+                          <h4
+                            data-typo="subheading"
+                            className="font-serif text-lg sm:text-xl font-semibold text-[#07543E] group-hover:text-[#073B2B] leading-snug"
+                          >
                             {qa.question}
                           </h4>
                         </div>
@@ -453,6 +499,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                       {isOpen && (
                         <div
                           id={panelId}
+                          data-typo="body"
                           className="px-5 sm:px-6 pb-5 pt-0 sm:pl-12 text-base sm:text-[17px] text-[#262820]/85 leading-relaxed font-serif"
                         >
                           {qa.answer}
@@ -472,18 +519,25 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       <section
         id="schedule"
+        {...scheduleTypoProps}
         className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 border-b border-[#07543E]/10 bg-[#FAF7F0]"
       >
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-10 sm:mb-12">
             <div className="max-w-2xl">
-              <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+              <p
+                data-typo="label"
+                className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2"
+              >
                 Schedule of Events
               </p>
-              <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-3">
+              <h2
+                data-typo="heading"
+                className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-3"
+              >
                 December 11 – 12, 2026
               </h2>
-              <p className="text-base sm:text-lg text-[#262820]/80">
+              <p data-typo="caption" className="text-base sm:text-lg text-[#262820]/80">
                 All event times are in West Africa Time (Africa/Lagos).
               </p>
             </div>
@@ -506,6 +560,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                       type="button"
                       role="tab"
                       aria-selected={active}
+                      data-typo="button"
                       onClick={() => setScheduleFilter(tab.id as 'all' | 'dec-11' | 'dec-12')}
                       className={`px-3 min-h-[44px] flex-1 sm:flex-initial text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                         active
@@ -521,6 +576,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
 
               <button
                 type="button"
+                data-typo="button"
                 onClick={onOpenDressCode}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] text-xs sm:text-sm font-semibold text-[#07543E] border border-[#C5A04A]/50 bg-[#FFFDF8] hover:bg-[#F2EBDD] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
@@ -546,7 +602,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
               <div key={group.heading} className="space-y-5">
                 <div className="flex items-center gap-3 pb-3 border-b border-[#C5A04A]/35">
                   <Calendar className="w-4 h-4 text-[#C5A04A] shrink-0" />
-                  <h3 className="font-sans text-xs sm:text-sm font-bold tracking-[0.18em] sm:tracking-[0.2em] uppercase text-[#07543E]">
+                  <h3
+                    data-typo="label"
+                    className="font-sans text-xs sm:text-sm font-bold tracking-[0.18em] sm:tracking-[0.2em] uppercase text-[#07543E]"
+                  >
                     {group.heading}
                   </h3>
                 </div>
@@ -571,13 +630,13 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                           </div>
 
                           {ev.dressCode && (
-                            <p className="text-sm text-[#737746] font-medium">
+                            <p data-typo="caption" className="text-sm text-[#737746] font-medium">
                               Dress Code: <span className="text-[#262820]">{ev.dressCode}</span>
                             </p>
                           )}
 
                           {ev.coloursOfDay && (
-                            <p className="text-sm text-[#737746] font-medium">
+                            <p data-typo="caption" className="text-sm text-[#737746] font-medium">
                               Colours of the day:{' '}
                               <span className="text-[#262820]">{ev.coloursOfDay}</span>
                             </p>
@@ -586,17 +645,25 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
 
                         {/* Right Column: Title, Description, Venue & Interactive Map / Calendar Actions */}
                         <div className="lg:col-span-8 space-y-4 min-w-0">
-                          <h4 className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] leading-snug break-words">
+                          <h4
+                            data-typo="subheading"
+                            className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] leading-snug break-words"
+                          >
                             {ev.title}
                           </h4>
 
-                          <p className="text-base sm:text-[17px] text-[#262820]/85 leading-relaxed whitespace-pre-line max-w-2xl break-words">
+                          <p
+                            data-typo="body"
+                            className="text-base sm:text-[17px] text-[#262820]/85 leading-relaxed whitespace-pre-line max-w-2xl break-words"
+                          >
                             {ev.description}
                           </p>
 
                           <div className="flex items-start gap-2.5 text-sm sm:text-base pt-1">
                             <MapPin className="w-4 h-4 text-[#07543E] shrink-0 mt-1" />
-                            <p className="font-medium text-[#262820] break-words">{ev.venueName}</p>
+                            <p data-typo="caption" className="font-medium text-[#262820] break-words">
+                              {ev.venueName}
+                            </p>
                           </div>
 
                           {/* Action Buttons: Map, Directions, Add to Calendar */}
@@ -687,6 +754,29 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
         <WeddingPhotoPuzzleSection
           puzzleImageUrl={siteContent.puzzleImageUrl}
           coupleNames={siteContent.coupleNames}
+          musicEnabled={siteContent.musicEnabled !== false}
+          availableSongs={availableSongs}
+          activeSongId={activeSongId}
+          onSelectSong={onSelectSong}
+          typography={siteContent.sectionTypography?.puzzle}
+        />
+      )}
+
+      {/* ====================================================================
+          4C. GIFTING & SUPPORT SECTION (Immediately After Puzzle, Before Q&A)
+      ==================================================================== */}
+      {siteContent.giftingEnabled !== false && (
+        <GiftingSection
+          heading={siteContent.giftingHeading || 'Gifting & Support'}
+          intro={
+            siteContent.giftingIntro ||
+            'Your presence, prayers, and warm wishes mean the world to us. For family and friends who would like to bless our new home with a monetary gift, our details are shared below with heartfelt gratitude.'
+          }
+          closing={siteContent.giftingClosing || 'Thank you for celebrating with us.'}
+          accountName={siteContent.giftingAccountName || 'Joseph John'}
+          bankName={siteContent.giftingBankName || 'Opay'}
+          accountNumber={siteContent.giftingAccountNumber || '8065013009'}
+          typography={siteContent.sectionTypography?.gifting}
         />
       )}
 
@@ -695,19 +785,29 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       <section
         id="faq"
+        {...faqTypoProps}
         className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 border-b border-[#07543E]/10 bg-[#F2EBDD]"
       >
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
             {/* Left Column: Heading, Intro & Natural Portrait */}
             <div className="lg:col-span-5 lg:sticky lg:top-24">
-              <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+              <p
+                data-typo="label"
+                className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2"
+              >
                 Q &amp; A
               </p>
-              <h2 className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-4">
+              <h2
+                data-typo="heading"
+                className="font-serif text-[34px] sm:text-5xl lg:text-[52px] font-semibold text-[#07543E] text-balance leading-tight mb-4"
+              >
                 Guest Information
               </h2>
-              <p className="text-base sm:text-lg text-[#262820]/80 leading-relaxed mb-6">
+              <p
+                data-typo="body"
+                className="text-base sm:text-lg text-[#262820]/80 leading-relaxed mb-6"
+              >
                 {AUTHORITATIVE_QA_INTRO}
               </p>
 
@@ -735,11 +835,12 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
 
               {filteredFaqs.length === 0 ? (
                 <div className="p-8 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 text-center">
-                  <p className="text-base text-[#262820]/75 mb-2">
+                  <p data-typo="body" className="text-base text-[#262820]/75 mb-2">
                     No questions matched &ldquo;{faqQuery}&rdquo;.
                   </p>
                   <button
                     type="button"
+                    data-typo="button"
                     onClick={() => setFaqQuery('')}
                     className="min-h-[44px] inline-flex items-center text-sm font-semibold text-[#07543E] underline underline-offset-4 cursor-pointer"
                   >
@@ -764,7 +865,10 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                             <span className="font-mono text-xs text-[#C5A04A] font-semibold shrink-0 tabular-nums">
                               {String(idx + 1).padStart(2, '0')}
                             </span>
-                            <h3 className="font-serif text-lg sm:text-xl font-semibold text-[#07543E] group-hover:text-[#073B2B] transition-colors">
+                            <h3
+                              data-typo="subheading"
+                              className="font-serif text-lg sm:text-xl font-semibold text-[#07543E] group-hover:text-[#073B2B] transition-colors"
+                            >
                               {faq.question}
                             </h3>
                           </div>
@@ -778,6 +882,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                         {isOpen && (
                           <div
                             id={panelId}
+                            data-typo="body"
                             className="mt-3 pl-0 sm:pl-9 text-base sm:text-[17px] text-[#262820]/85 leading-relaxed whitespace-pre-line break-words"
                           >
                             {faq.answer}
@@ -802,14 +907,20 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
         maxGuestsPerRsvp={siteContent.maxGuestsPerRsvp}
         contactName={siteContent.contactName}
         contactPhone={siteContent.contactPhone}
+        typography={siteContent.sectionTypography?.rsvp}
       />
 
       {/* ====================================================================
-          7. SERVER-LOCKED WEDDING DAY GALLERY (Soft Cream #F2EBDD)
+          7. WEDDING HIGHLIGHTS SLIDESHOW + SERVER-LOCKED GUEST GALLERY
       ==================================================================== */}
       <GallerySection
         galleryPublicEnabled={siteContent.galleryPublicEnabled}
         galleryUnlockISO={siteContent.galleryUnlockISO}
+        coupleNames={siteContent.coupleNames}
+        slideshowItems={siteContent.slideshowItems}
+        slideshowAutoplay={siteContent.slideshowAutoplay}
+        slideshowIntervalMs={siteContent.slideshowIntervalMs}
+        typography={siteContent.sectionTypography?.gallery}
       />
 
       {/* ====================================================================

@@ -30,9 +30,16 @@ import {
   Puzzle,
   Eye,
   Image as ImageIcon,
-  Music
+  Music,
+  Gift,
+  Type,
+  Copy
 } from 'lucide-react';
 import { WeddingPuzzleBoard } from './WeddingPhotoPuzzleSection';
+import { AdminMusicLibraryPanel } from './admin/AdminMusicLibraryPanel';
+import { AdminGiftingPanel } from './admin/AdminGiftingPanel';
+import { AdminTypographyPanel } from './admin/AdminTypographyPanel';
+import { AdminSlideshowPanel } from './admin/AdminSlideshowPanel';
 import { User } from 'firebase/auth';
 import {
   signInAdminWithGoogle,
@@ -41,16 +48,20 @@ import {
 import {
   connectGoogleDrive,
   getDriveAccessToken,
-  disconnectGoogleDrive
+  disconnectGoogleDrive,
+  openServerDriveOAuthPopup,
+  awaitServerDriveOAuthResult
 } from '../services/driveOAuth';
 import {
   saveSiteContent,
+  saveSlideshowSettings,
   listAllRsvps,
   updateRsvpRecord,
   deleteRsvpRecord,
   exportRsvpsToCsv,
   fetchGalleryServerStatus,
   fetchDriveConnectionStatusAdmin,
+  startServerDriveOAuth,
   verifyDriveConnectionWithServer,
   initDriveFoldersWithServer,
   testDriveConnectionWithServer,
@@ -62,7 +73,9 @@ import {
   deleteGalleryItem,
   listAdmins,
   addAdminUser,
-  removeAdminUser
+  removeAdminUser,
+  listAllMusicTracksAdmin,
+  listSongSuggestionsAdmin
 } from '../services/weddingRepository';
 import { WEDDING_PHOTOS } from '../data/weddingSite';
 import {
@@ -73,21 +86,21 @@ import {
   GalleryServerStatus,
   DriveConnectionStatus,
   DriveAuthState,
-  DriveAuthStateLabel,
   DriveMediaCategory,
   CoupleQAItem,
   WeddingScheduleEvent,
-  GuestFAQItem
+  GuestFAQItem,
+  MusicTrack,
+  SongSuggestion,
+  SlideshowSlideItem
 } from '../types';
 import {
-  AUDIO_FILE_INPUT_ACCEPT,
   FILE_INPUT_ACCEPT,
   MAX_AUDIO_BYTES,
   MAX_BATCH_FILES,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES,
   SelectedUploadEntry,
-  createSelectedAudioEntry,
   createSelectedUploadEntry,
   formatFileSize,
   validateUploadEntries
@@ -101,52 +114,140 @@ interface AdminDashboardProps {
   onReturnToWebsite: () => void;
 }
 
-type AdminTab = 'overview' | 'content' | 'rsvps' | 'gallery' | 'settings';
+type AdminTab =
+  | 'overview'
+  | 'content'
+  | 'music'
+  | 'gifting'
+  | 'typography'
+  | 'rsvps'
+  | 'gallery'
+  | 'settings';
 
 function resolveDisplayedDriveAuth(
   driveStatus: DriveConnectionStatus | null,
   hasBrowserDriveToken: boolean
 ): {
   state: DriveAuthState;
-  label: DriveAuthStateLabel;
+  label: string;
+  overallLabel: 'Fully Connected' | 'Temporary Browser Connection' | 'Disconnected';
+  overallStatus: 'fully_connected' | 'temporary_browser' | 'disconnected';
+  browserLabel: 'Connected' | 'Disconnected';
+  browserBadgeClass: string;
+  serverRefreshLabel: 'Connected' | 'Expired' | 'Invalid' | 'Missing' | 'Checking';
+  serverRefreshBadgeClass: string;
   badgeClass: string;
 } {
+  const browserConnected = Boolean(
+    hasBrowserDriveToken || driveStatus?.browserSessionStatus === 'connected'
+  );
+  const browserLabel: 'Connected' | 'Disconnected' = browserConnected
+    ? 'Connected'
+    : 'Disconnected';
+  const browserBadgeClass = browserConnected
+    ? 'bg-[#07543E]/12 text-[#07543E]'
+    : 'bg-stone-200 text-[#262820]/75';
+
   if (!driveStatus) {
     return {
       state: 'not_connected',
-      label: 'Not Connected',
+      label: 'Disconnected',
+      overallLabel: 'Disconnected',
+      overallStatus: 'disconnected',
+      browserLabel,
+      browserBadgeClass,
+      serverRefreshLabel: 'Checking',
+      serverRefreshBadgeClass: 'bg-stone-200 text-[#262820]',
       badgeClass: 'bg-stone-200 text-[#262820]'
     };
+  }
+
+  let serverRefreshLabel: 'Connected' | 'Expired' | 'Invalid' | 'Missing' | 'Checking' = 'Missing';
+  let serverRefreshBadgeClass = 'bg-amber-100 text-amber-950';
+  switch (driveStatus.serverRefreshStatus) {
+    case 'connected':
+      serverRefreshLabel = 'Connected';
+      serverRefreshBadgeClass = 'bg-[#07543E] text-white';
+      break;
+    case 'expired':
+      serverRefreshLabel = 'Expired';
+      serverRefreshBadgeClass = 'bg-red-100 text-red-900';
+      break;
+    case 'invalid':
+      serverRefreshLabel = 'Invalid';
+      serverRefreshBadgeClass = 'bg-red-100 text-red-900';
+      break;
+    case 'unverified':
+      serverRefreshLabel = 'Checking';
+      serverRefreshBadgeClass = 'bg-stone-200 text-[#262820]';
+      break;
+    case 'missing':
+    default:
+      serverRefreshLabel = 'Missing';
+      serverRefreshBadgeClass = 'bg-amber-100 text-amber-950';
+      break;
   }
 
   if (!driveStatus.configuredFolderId) {
     return {
       state: 'missing_server_credentials',
-      label: 'Missing Server Credentials',
+      label: 'Disconnected — Missing Folder ID',
+      overallLabel: 'Disconnected',
+      overallStatus: 'disconnected',
+      browserLabel,
+      browserBadgeClass,
+      serverRefreshLabel,
+      serverRefreshBadgeClass,
       badgeClass: 'bg-red-100 text-red-900'
     };
   }
 
-  if (driveStatus.authState === 'connected_server_refresh') {
+  // Strictly report Fully Connected ONLY when server-side refresh auth is verified and working
+  if (
+    driveStatus.overallConnectionStatus === 'fully_connected' &&
+    driveStatus.serverRefreshStatus === 'connected'
+  ) {
     return {
       state: 'connected_server_refresh',
-      label: 'Connected — Server Refresh Token',
+      label: 'Fully Connected',
+      overallLabel: 'Fully Connected',
+      overallStatus: 'fully_connected',
+      browserLabel,
+      browserBadgeClass,
+      serverRefreshLabel,
+      serverRefreshBadgeClass,
       badgeClass: 'bg-[#07543E] text-white'
     };
   }
 
-  if (hasBrowserDriveToken) {
+  if (browserConnected) {
     return {
       state: 'connected_browser_session',
-      label: 'Connected — Browser Session Only',
-      badgeClass: 'bg-[#737746] text-white'
+      label: 'Temporary Browser Connection',
+      overallLabel: 'Temporary Browser Connection',
+      overallStatus: 'temporary_browser',
+      browserLabel,
+      browserBadgeClass,
+      serverRefreshLabel,
+      serverRefreshBadgeClass,
+      badgeClass: 'bg-amber-100 text-amber-950'
     };
   }
 
-  if (driveStatus.authState === 'reconnection_required') {
+  if (
+    driveStatus.serverRefreshStatus === 'expired' ||
+    driveStatus.serverRefreshStatus === 'invalid' ||
+    driveStatus.authState === 'reconnection_required'
+  ) {
     return {
       state: 'reconnection_required',
-      label: 'Reconnection Required',
+      label: 'Disconnected',
+      overallLabel: 'Disconnected',
+      overallStatus: 'disconnected',
+      browserLabel,
+      browserBadgeClass,
+      serverRefreshLabel,
+      serverRefreshBadgeClass,
       badgeClass: 'bg-red-100 text-red-900'
     };
   }
@@ -154,14 +255,26 @@ function resolveDisplayedDriveAuth(
   if (driveStatus.authState === 'missing_server_credentials') {
     return {
       state: 'missing_server_credentials',
-      label: 'Missing Server Credentials',
+      label: 'Disconnected',
+      overallLabel: 'Disconnected',
+      overallStatus: 'disconnected',
+      browserLabel,
+      browserBadgeClass,
+      serverRefreshLabel,
+      serverRefreshBadgeClass,
       badgeClass: 'bg-amber-100 text-amber-950'
     };
   }
 
   return {
     state: 'not_connected',
-    label: 'Not Connected',
+    label: 'Disconnected',
+    overallLabel: 'Disconnected',
+    overallStatus: 'disconnected',
+    browserLabel,
+    browserBadgeClass,
+    serverRefreshLabel,
+    serverRefreshBadgeClass,
     badgeClass: 'bg-stone-200 text-[#262820]'
   };
 }
@@ -181,6 +294,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
   const [rsvpLoadError, setRsvpLoadError] = useState<string | null>(null);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
+  const [songSuggestions, setSongSuggestions] = useState<SongSuggestion[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [serverStatus, setServerStatus] = useState<GalleryServerStatus | null>(null);
   const [driveStatus, setDriveStatus] = useState<DriveConnectionStatus | null>(null);
@@ -188,6 +303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     Boolean(getDriveAccessToken())
   );
   const [driveActionBusy, setDriveActionBusy] = useState<boolean>(false);
+  const [copiedCallbackUri, setCopiedCallbackUri] = useState<boolean>(false);
   const [loadingData, setLoadingData] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -235,14 +351,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [puzzleImageError, setPuzzleImageError] = useState<string | null>(null);
   const puzzleFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Wedding Background Music settings state
-  const [showMusicPicker, setShowMusicPicker] = useState(false);
-  const [showMusicPreviewModal, setShowMusicPreviewModal] = useState(false);
-  const [musicAudioUploading, setMusicAudioUploading] = useState(false);
-  const [musicAudioProgress, setMusicAudioProgress] = useState(0);
-  const [musicAudioError, setMusicAudioError] = useState<string | null>(null);
-  const musicFileInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     setDraftContent(siteContent);
   }, [siteContent]);
@@ -252,12 +360,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setLoadingData(true);
     setRsvpLoadError(null);
     try {
-      const [rsvpResult, mediaResult, adminResult, statusResult, driveResult] = await Promise.allSettled([
+      const [
+        rsvpResult,
+        mediaResult,
+        adminResult,
+        statusResult,
+        driveResult,
+        musicResult,
+        suggestionsResult
+      ] = await Promise.allSettled([
         listAllRsvps(),
         listAllGalleryItemsAdmin(),
         listAdmins(),
         fetchGalleryServerStatus(),
-        fetchDriveConnectionStatusAdmin()
+        fetchDriveConnectionStatusAdmin(),
+        listAllMusicTracksAdmin(),
+        listSongSuggestionsAdmin()
       ]);
 
       if (rsvpResult.status === 'fulfilled') {
@@ -281,6 +399,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       if (driveResult.status === 'fulfilled') {
         setDriveStatus(driveResult.value);
+      }
+      if (musicResult.status === 'fulfilled') {
+        setMusicTracks(musicResult.value);
+      }
+      if (suggestionsResult.status === 'fulfilled') {
+        setSongSuggestions(suggestionsResult.value);
       }
       setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
     } catch (err) {
@@ -316,7 +440,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleConnectGoogleDrive = async () => {
+  const handleConnectBrowserDriveSession = async () => {
     setDriveActionBusy(true);
     setBannerMessage(null);
     try {
@@ -326,21 +450,99 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setDriveStatus(nextStatus);
       setAdminNeedsDriveReconnect(false);
       await refreshDriveAndServerStatus();
-      const modeNote = nextStatus.unattendedUploadsReady
-        ? 'Persistent server refresh-token authentication is also active for unattended guest uploads.'
-        : 'Browser session connected. Note: unattended public guest uploads still require all server OAuth credentials configured.';
+      const modeNote =
+        nextStatus.overallConnectionStatus === 'fully_connected'
+          ? 'Google Drive is fully connected. Server-side authentication is working.'
+          : 'Browser connection active, but server-side authentication is not configured. Background and guest uploads may be affected.';
       setBannerMessage({
-        type: 'success',
-        text: `Google Drive authorized as ${nextStatus.connectedEmail || email} (Folder: "${nextStatus.folderName}"). ${modeNote}`
+        type: nextStatus.overallConnectionStatus === 'fully_connected' ? 'success' : 'error',
+        text: `Browser Drive session connected as ${nextStatus.connectedEmail || email}. ${modeNote}`
       });
     } catch (err) {
       setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
       setBannerMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Unable to connect Google Drive.'
+        text: err instanceof Error ? err.message : 'Unable to connect browser Google Drive session.'
       });
     } finally {
       setDriveActionBusy(false);
+    }
+  };
+
+  const handleConnectGoogleDrive = async () => {
+    setDriveActionBusy(true);
+    setBannerMessage(null);
+
+    // If server OAuth client credentials (GOOGLE_OAUTH_CLIENT_ID / SECRET) are configured,
+    // run the full server-side authorization-code exchange so Google issues a persistent refresh token.
+    if (driveStatus?.serverOAuthClientConfigured) {
+      let popup: Window | null = null;
+      try {
+        popup = openServerDriveOAuthPopup();
+        const { authUrl, redirectUri } = await startServerDriveOAuth();
+        const result = await awaitServerDriveOAuthResult(popup, authUrl, redirectUri);
+
+        if (result.driveStatus) {
+          setDriveStatus(result.driveStatus);
+        }
+        await refreshDriveAndServerStatus();
+
+        if (result.ok) {
+          setAdminNeedsDriveReconnect(false);
+          setBannerMessage({
+            type: 'success',
+            text: result.message || 'Google Drive is fully connected. Server-side authentication is working.'
+          });
+        } else {
+          setBannerMessage({
+            type: 'error',
+            text:
+              result.message ||
+              'Server-side Google Drive authorization did not complete. Please verify permissions and try again.'
+          });
+        }
+      } catch (err) {
+        try {
+          if (popup && !popup.closed) popup.close();
+        } catch {
+          // Ignore popup close failure
+        }
+        await refreshDriveAndServerStatus();
+        setBannerMessage({
+          type: 'error',
+          text:
+            err instanceof Error
+              ? err.message
+              : 'Unable to complete server-side Google Drive reconnection.'
+        });
+      } finally {
+        setDriveActionBusy(false);
+      }
+      return;
+    }
+
+    // Fallback when server OAuth client ID/secret are not yet configured: browser-only session
+    await handleConnectBrowserDriveSession();
+  };
+
+  const handleCopyCallbackUri = async () => {
+    const callbackUrl = driveStatus?.oauthRedirectUri || '';
+    if (!callbackUrl) {
+      setBannerMessage({
+        type: 'error',
+        text: 'Server OAuth redirect URI is not configured yet. Set GOOGLE_OAUTH_REDIRECT_URI or APP_URL on the server.'
+      });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(callbackUrl);
+      setCopiedCallbackUri(true);
+      window.setTimeout(() => setCopiedCallbackUri(false), 2200);
+    } catch {
+      setBannerMessage({
+        type: 'error',
+        text: `Copy this exact OAuth redirect URI manually: ${callbackUrl}`
+      });
     }
   };
 
@@ -476,6 +678,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleSaveSlideshowSettings = async (settings: {
+    slideshowAutoplay: boolean;
+    slideshowIntervalMs: number;
+    slideshowItems: SlideshowSlideItem[];
+  }): Promise<boolean> => {
+    setSavingContent(true);
+    setBannerMessage(null);
+    try {
+      await saveSlideshowSettings(settings);
+      setBannerMessage({
+        type: 'success',
+        text: 'Gallery slideshow saved and published live.'
+      });
+      return true;
+    } catch (err) {
+      setBannerMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not save gallery slideshow.'
+      });
+      return false;
+    } finally {
+      setSavingContent(false);
+    }
+  };
+
   const handleUploadPuzzleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (puzzleFileInputRef.current) puzzleFileInputRef.current.value = '';
@@ -539,73 +766,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
     } finally {
       setPuzzleImageUploading(false);
-    }
-  };
-
-  const handleUploadMusicAudio = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (musicFileInputRef.current) musicFileInputRef.current.value = '';
-    if (!file || musicAudioUploading) return;
-
-    setMusicAudioError(null);
-    const entry = createSelectedAudioEntry(file, adminLimits.maxAudioBytes);
-    if (!entry.isValid || entry.mediaType !== 'audio') {
-      setMusicAudioError(
-        entry.validationError ||
-          'Please select an MP3, M4A, or AAC audio file up to 50 MB.'
-      );
-      return;
-    }
-
-    setMusicAudioUploading(true);
-    setMusicAudioProgress(0);
-    setBannerMessage(null);
-
-    try {
-      const caption =
-        draftContent.musicTitle && draftContent.musicArtist
-          ? `${draftContent.musicTitle} - ${draftContent.musicArtist}`
-          : file.name;
-      const outcome = await uploadGalleryMediaFiles({
-        entries: [{ id: entry.id, file }],
-        guestName: siteContent.coupleNames,
-        caption,
-        category: 'admin_music',
-        isAdmin: true,
-        onProgress: setMusicAudioProgress
-      });
-
-      setHasBrowserDriveToken(Boolean(getDriveAccessToken()));
-      if (outcome.needsDriveReconnect) {
-        setAdminNeedsDriveReconnect(true);
-      }
-
-      if (outcome.createdItems.length > 0) {
-        const created = outcome.createdItems[0];
-        setDraftContent((d) => ({
-          ...d,
-          musicAudioFileId: created.driveFileId,
-          musicAudioUrl: created.fileUrl,
-          musicAudioFileName: file.name
-        }));
-        await loadAllAdminData();
-        setBannerMessage({
-          type: 'success',
-          text: 'Background music audio uploaded to Google Drive. Click "Save Changes" to publish it live.'
-        });
-      } else {
-        const errMsg =
-          outcome.results[0]?.errorMessage ||
-          outcome.globalError ||
-          'Could not upload the wedding music file.';
-        setMusicAudioError(errMsg);
-      }
-    } catch (err) {
-      setMusicAudioError(
-        err instanceof Error ? err.message : 'Could not upload the wedding music file.'
-      );
-    } finally {
-      setMusicAudioUploading(false);
     }
   };
 
@@ -999,6 +1159,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {[
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           { id: 'content', label: 'Website Content', icon: FileEdit },
+          {
+            id: 'music',
+            label: `Music (${musicTracks.length}${
+              songSuggestions.filter((s) => s.status === 'new').length > 0
+                ? ` · ${songSuggestions.filter((s) => s.status === 'new').length} new`
+                : ''
+            })`,
+            icon: Music
+          },
+          { id: 'gifting', label: 'Gifting', icon: Gift },
+          { id: 'typography', label: 'Typography', icon: Type },
           { id: 'rsvps', label: `RSVPs (${rsvpMetrics.totalRsvps})`, icon: Users },
           { id: 'gallery', label: `Gallery (${galleryItems.length})`, icon: Images },
           { id: 'settings', label: 'Site Settings', icon: Settings }
@@ -1130,48 +1301,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <span className={`self-start px-3 py-1.5 rounded-md text-xs font-semibold ${displayedDriveAuth.badgeClass}`}>
-                {displayedDriveAuth.label}
+                {displayedDriveAuth.overallLabel}
               </span>
             </div>
 
-            {driveStatus && driveStatus.missingServerEnvVars.length > 0 && (
+            {/* Primary Honest Status Callout */}
+            {displayedDriveAuth.overallStatus === 'fully_connected' ? (
+              <div className="p-4 rounded-lg bg-[#07543E]/8 border border-[#07543E]/25 text-xs sm:text-sm text-[#07543E] flex items-start gap-2.5 leading-relaxed">
+                <CheckCircle2 className="w-4 h-4 text-[#07543E] shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold">
+                    Google Drive is fully connected. Server-side authentication is working.
+                  </p>
+                  <p className="text-xs text-[#07543E]/85">
+                    Unattended guest uploads, admin uploads, music tracks, and slideshow media are backed by an active server refresh token
+                    {driveStatus?.serverRefreshTokenSource === 'server_store'
+                      ? ' (stored encrypted on this server instance; update GOOGLE_OAUTH_REFRESH_TOKEN in deployment secrets if redeploying to a fresh container).'
+                      : ' (loaded from server environment secrets).'}
+                  </p>
+                </div>
+              </div>
+            ) : displayedDriveAuth.overallStatus === 'temporary_browser' ? (
               <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs sm:text-sm text-amber-950 space-y-2 leading-relaxed">
                 <div className="flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                   <div className="space-y-1.5">
                     <p className="font-semibold">
-                      Persistent Server Credentials Missing — Unattended Guest Uploads Disabled
+                      Browser connection active, but server-side authentication is not configured. Background and guest uploads may be affected.
                     </p>
-                    <p>
-                      Unattended public guest uploads require configuring these server environment variables:{' '}
-                      <code className="font-mono font-semibold">
-                        {driveStatus.missingServerEnvVars.join(', ')}
-                      </code>
-                      .
-                    </p>
-                    {driveStatus.configuredFolderId && (
-                      <p>
-                        {displayedDriveAuth.state === 'connected_browser_session'
-                          ? 'Your current browser OAuth session lets you upload as an administrator right now, but public guests cannot upload without an admin session until the server refresh-token variables above are set.'
-                          : 'Until those server secrets are configured, clicking "Connect Google Drive" only authorizes temporary administrator uploads in this browser session.'}
+                    {driveStatus?.lastError && (
+                      <p className="text-xs text-red-900 font-medium">
+                        Server detail: {driveStatus.lastError}
+                      </p>
+                    )}
+                    {driveStatus && driveStatus.missingServerEnvVars.length > 0 && (
+                      <p className="text-xs">
+                        Missing server variables:{' '}
+                        <code className="font-mono font-semibold">
+                          {driveStatus.missingServerEnvVars.join(', ')}
+                        </code>
                       </p>
                     )}
                   </div>
                 </div>
               </div>
-            )}
-
-            {(displayedDriveAuth.state === 'reconnection_required' ||
-              (driveStatus?.serverRefreshConfigured && driveStatus.serverRefreshVerified === false) ||
-              driveStatus?.lastError ||
-              adminNeedsDriveReconnect) && (
+            ) : (
               <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-2.5 leading-relaxed">
                   <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
-                  <span>
-                    {driveStatus?.lastError ||
-                      'Google Drive reconnection is required. Update the server refresh token for unattended guest uploads or click "Reconnect Google Drive" for administrator uploads.'}
-                  </span>
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      {driveStatus?.serverRefreshStatus === 'expired'
+                        ? 'Server Google Drive refresh token has expired or been revoked.'
+                        : driveStatus?.serverRefreshStatus === 'invalid'
+                        ? 'Server Google Drive OAuth credentials are invalid.'
+                        : 'Google Drive server-side authentication is not connected.'}
+                    </p>
+                    <p className="text-xs sm:text-sm">
+                      {driveStatus?.lastError ||
+                        (driveStatus?.serverOAuthClientConfigured
+                          ? 'Click "Reconnect Google Drive" to complete server-side OAuth authorization and issue a fresh offline refresh token.'
+                          : `Configure ${driveStatus?.missingServerEnvVars.join(', ') || 'GOOGLE_DRIVE_FOLDER_ID, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET'} in server secrets to enable persistent server authentication.`)}
+                    </p>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1185,62 +1377,134 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
+            {/* Separate Connection Status Breakdown */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm">
               <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
                 <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
-                  Authentication Mode
+                  Overall Drive Connection
                 </p>
-                <p className="font-semibold text-[#07543E] mt-1 break-words">
-                  {driveStatus?.unattendedUploadsReady
-                    ? 'Server Refresh Token (Unattended)'
-                    : hasBrowserDriveToken
-                    ? 'Browser Session Only (Temporary)'
-                    : 'Not Authorized'}
-                </p>
-                <p className="text-xs text-[#262820]/65 mt-0.5 break-all">
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${displayedDriveAuth.badgeClass}`}>
+                    {displayedDriveAuth.overallLabel}
+                  </span>
+                </div>
+                <p className="text-xs text-[#262820]/65 mt-1.5 break-all">
                   {driveStatus?.connectedEmail || 'joepreserve@gmail.com'}
                 </p>
               </div>
 
               <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
                 <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
-                  Target Drive Folder
+                  Server Refresh Token
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${displayedDriveAuth.serverRefreshBadgeClass}`}>
+                    {displayedDriveAuth.serverRefreshLabel}
+                  </span>
+                </div>
+                <p className="text-xs text-[#262820]/65 mt-1.5 truncate">
+                  {driveStatus?.serverRefreshTokenSource === 'server_store'
+                    ? 'Source: Encrypted Server Store'
+                    : driveStatus?.serverRefreshTokenSource === 'env'
+                    ? 'Source: Server Env Secret'
+                    : 'No server refresh token active'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
+                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
+                  Browser Session
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${displayedDriveAuth.browserBadgeClass}`}>
+                    {displayedDriveAuth.browserLabel}
+                  </span>
+                </div>
+                <p className="text-xs text-[#262820]/65 mt-1.5 truncate">
+                  {hasBrowserDriveToken
+                    ? 'Optional temporary admin token'
+                    : 'Not needed when server token is Connected'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
+                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
+                  Target Folder &amp; Last Upload
                 </p>
                 <p className="font-semibold text-[#07543E] mt-1 truncate">
                   {driveStatus?.folderName || 'Pending verification'}
+                  {driveStatus?.subfoldersInitialized ? ' · Ready' : ''}
                 </p>
-                <p className="font-mono text-xs text-[#262820]/60 truncate">
-                  {driveStatus?.folderIdPreview || '—'}
-                </p>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
-                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
-                  Folder Hierarchy
-                </p>
-                <p className="font-semibold text-[#07543E] mt-1">
-                  {driveStatus?.subfoldersInitialized ? 'Initialized (Ready)' : 'Not initialized yet'}
-                </p>
-                <p className="text-xs text-[#262820]/65 truncate">
-                  Website · Guest Uploads · Admin Media
-                </p>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-white border border-[#07543E]/12 min-w-0">
-                <p className="text-xs uppercase tracking-wider text-[#737746] font-semibold">
-                  Last Upload
-                </p>
-                <p className="font-semibold text-[#07543E] mt-1">
+                <p className="text-xs text-[#262820]/65 mt-0.5 truncate">
                   {driveStatus?.lastUploadAt
-                    ? new Intl.DateTimeFormat('en-GB', {
+                    ? `Last: ${new Intl.DateTimeFormat('en-GB', {
                         timeZone: 'Africa/Lagos',
                         dateStyle: 'medium',
                         timeStyle: 'short'
-                      }).format(new Date(driveStatus.lastUploadAt))
-                    : 'No uploads yet'}
+                      }).format(new Date(driveStatus.lastUploadAt))}`
+                    : driveStatus?.folderIdPreview || 'No uploads yet'}
                 </p>
               </div>
             </div>
+
+            {/* Canonical Server OAuth Redirect URI & Safe Diagnostics */}
+            {driveStatus?.serverOAuthClientConfigured && (
+              <div className="p-4 rounded-lg bg-[#FAF7F0] border border-[#07543E]/15 text-xs text-[#262820]/85 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="font-semibold text-[#07543E]">
+                    Exact OAuth Redirect URI (Register in Google Cloud Console):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyCallbackUri()}
+                    disabled={!driveStatus.oauthRedirectUri}
+                    className="self-start sm:self-auto inline-flex items-center gap-1 px-2.5 py-1 rounded border border-[#07543E]/20 bg-white hover:bg-[#07543E]/5 disabled:opacity-50 text-[#07543E] font-semibold cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedCallbackUri ? 'Copied!' : 'Copy Redirect URI'}</span>
+                  </button>
+                </div>
+
+                <p className="font-mono text-[11px] bg-white px-3 py-2 rounded border border-[#07543E]/12 break-all text-[#07543E] select-all">
+                  {driveStatus.oauthRedirectUri || 'Not configured — set GOOGLE_OAUTH_REDIRECT_URI on the server'}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-[#262820]/75">
+                  <div className="bg-white/80 px-2.5 py-1.5 rounded border border-[#07543E]/10 min-w-0">
+                    <span className="uppercase tracking-wider text-[#737746] font-semibold block">
+                      OAuth Client ID
+                    </span>
+                    <span className="font-mono text-[#07543E] break-all">
+                      {driveStatus.oauthClientIdMasked || 'not-configured'}
+                    </span>
+                  </div>
+                  <div className="bg-white/80 px-2.5 py-1.5 rounded border border-[#07543E]/10 min-w-0">
+                    <span className="uppercase tracking-wider text-[#737746] font-semibold block">
+                      Callback Route
+                    </span>
+                    <span className="font-mono text-[#07543E] break-all">
+                      {driveStatus.oauthCallbackPath || '/api/drive/oauth/callback'}
+                    </span>
+                  </div>
+                  <div className="bg-white/80 px-2.5 py-1.5 rounded border border-[#07543E]/10 min-w-0">
+                    <span className="uppercase tracking-wider text-[#737746] font-semibold block">
+                      Redirect URI Source
+                    </span>
+                    <span className="font-mono text-[#07543E]">
+                      {driveStatus.oauthRedirectUriSource === 'env_redirect_uri'
+                        ? 'GOOGLE_OAUTH_REDIRECT_URI'
+                        : driveStatus.oauthRedirectUriSource === 'env_app_url'
+                        ? 'APP_URL'
+                        : 'Server Request Origin'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-[#262820]/70 leading-relaxed">
+                  Add the exact Redirect URI above under Google Cloud Console → APIs &amp; Services → Credentials → OAuth 2.0 Client (<code className="font-mono">{driveStatus.oauthClientIdMasked}</code>) → <strong>Authorized redirect URIs</strong>, and set OAuth consent screen Publishing status to <strong>In production</strong> so refresh tokens do not expire after 7 days.
+                </p>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 pt-1">
               <button
@@ -1251,7 +1515,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Link2 className="w-3.5 h-3.5 text-[#C5A04A]" />
                 <span>
-                  {hasBrowserDriveToken || displayedDriveAuth.state === 'reconnection_required'
+                  {displayedDriveAuth.overallStatus === 'fully_connected' ||
+                  displayedDriveAuth.state === 'reconnection_required' ||
+                  hasBrowserDriveToken
                     ? 'Reconnect Google Drive'
                     : 'Connect Google Drive'}
                 </span>
@@ -1266,6 +1532,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <ShieldCheck className="w-3.5 h-3.5 text-[#C5A04A]" />
                 <span>Test Server Refresh Token</span>
               </button>
+
+              {driveStatus?.serverOAuthClientConfigured && !hasBrowserDriveToken && (
+                <button
+                  type="button"
+                  onClick={() => void handleConnectBrowserDriveSession()}
+                  disabled={driveActionBusy || !driveStatus?.configuredFolderId}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-50 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>Connect Browser Session</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -2156,10 +2434,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* ====================================================================
-          TAB 4: GALLERY MODERATION & ADMIN UPLOAD
+          TAB: MUSIC LIBRARY & PRIVATE SONG SUGGESTIONS
+      ==================================================================== */}
+      {activeTab === 'music' && (
+        <AdminMusicLibraryPanel
+          draftContent={draftContent}
+          onToggleGlobalMusic={async (enabled) => {
+            const next = { ...draftContent, musicEnabled: enabled };
+            setDraftContent(next);
+            await handleSaveSiteContent(next);
+          }}
+          onSyncDefaultSongToSiteContent={async (track) => {
+            const next: SiteContentData = {
+              ...draftContent,
+              musicTitle: track.title,
+              musicArtist: track.artist,
+              musicAudioUrl: track.fileUrl,
+              musicAudioFileId: track.driveFileId,
+              musicAudioFileName: track.fileName
+            };
+            setDraftContent(next);
+            await saveSiteContent(next);
+          }}
+          musicTracks={musicTracks}
+          songSuggestions={songSuggestions}
+          existingAudioGalleryItems={existingAudioTracks}
+          coupleNames={siteContent.coupleNames}
+          maxAudioBytes={adminLimits.maxAudioBytes}
+          onRefreshData={loadAllAdminData}
+          onNotify={(type, text) => setBannerMessage({ type, text })}
+          onNeedsDriveReconnect={() => setAdminNeedsDriveReconnect(true)}
+        />
+      )}
+
+      {/* ====================================================================
+          TAB: GIFTING & SUPPORT SETTINGS
+      ==================================================================== */}
+      {activeTab === 'gifting' && (
+        <AdminGiftingPanel
+          draftContent={draftContent}
+          setDraftContent={setDraftContent}
+          savingContent={savingContent}
+          onSave={handleSaveSiteContent}
+        />
+      )}
+
+      {/* ====================================================================
+          TAB: SECTION-BY-SECTION TYPOGRAPHY CONTROLS
+      ==================================================================== */}
+      {activeTab === 'typography' && (
+        <AdminTypographyPanel
+          draftContent={draftContent}
+          setDraftContent={setDraftContent}
+          savingContent={savingContent}
+          onSave={handleSaveSiteContent}
+        />
+      )}
+
+      {/* ====================================================================
+          TAB 4: GALLERY SLIDESHOW, MODERATION & ADMIN UPLOAD
       ==================================================================== */}
       {activeTab === 'gallery' && (
         <div className="space-y-8">
+          <AdminSlideshowPanel
+            draftContent={draftContent}
+            setDraftContent={setDraftContent}
+            galleryItems={galleryItems}
+            coupleNames={siteContent.coupleNames}
+            maxImageBytes={adminLimits.maxImageBytes}
+            savingContent={savingContent}
+            onSaveSlideshow={handleSaveSlideshowSettings}
+            onRefreshData={loadAllAdminData}
+            onNotify={(type, text) => setBannerMessage({ type, text })}
+            onNeedsDriveReconnect={() => setAdminNeedsDriveReconnect(true)}
+          />
+
           {/* Quick Public Visibility Toggle + Admin Early Upload */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <form
@@ -2875,292 +3224,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </section>
 
-          {/* Website Background Music Settings Card */}
-          <section className="p-6 sm:p-8 rounded-xl bg-[#FFFDF8] border border-[#C5A04A]/35 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#07543E]/10 pb-4">
-              <div className="flex items-start gap-3">
-                <Music className="w-5 h-5 text-[#07543E] mt-1 shrink-0" />
-                <div>
-                  <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
-                    Website Background Music
-                  </h2>
-                  <p className="text-xs sm:text-sm text-[#262820]/75 mt-0.5">
-                    Manage website background music (auto-starts on entering the main site, controlled via the centered header play/pause icon; supports MP3, M4A, AAC up to 50 MB).
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                role="switch"
-                aria-checked={draftContent.musicEnabled !== false}
-                onClick={() =>
-                  setDraftContent((d) => ({
-                    ...d,
-                    musicEnabled: !(d.musicEnabled !== false)
-                  }))
-                }
-                className={`inline-flex items-center justify-center gap-2.5 px-4 min-h-[44px] rounded-lg border text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors shrink-0 ${
-                  draftContent.musicEnabled !== false
-                    ? 'bg-[#07543E] text-white border-[#07543E]'
-                    : 'bg-white text-[#262820]/75 border-[#07543E]/25'
-                }`}
-              >
-                <span>
-                  {draftContent.musicEnabled !== false
-                    ? 'Music Enabled'
-                    : 'Music Hidden'}
-                </span>
-              </button>
-            </div>
-
-            {musicAudioError && (
-              <div
-                role="alert"
-                className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 flex items-start gap-2"
-              >
-                <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
-                <span>{musicAudioError}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-              {/* Current Audio Preview / Player */}
-              <div className="md:col-span-5 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-[#07543E]">
-                  Current Audio Preview / Player
-                </p>
-
-                <div className="p-4 rounded-xl bg-[#073B2B] border border-[#C5A04A]/50 text-[#FAF7F0] space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#07543E] border border-[#C5A04A]/45 flex items-center justify-center text-[#F3E5AB] shrink-0">
-                      <Music className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-serif text-base font-semibold text-[#FAF7F0] truncate">
-                        {draftContent.musicTitle || 'Perfect'}
-                      </p>
-                      <p className="text-xs text-[#E6CE8A]/90 truncate">
-                        {draftContent.musicArtist || 'Ed Sheeran'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {draftContent.musicAudioUrl ? (
-                    <audio
-                      key={draftContent.musicAudioUrl}
-                      controls
-                      preload="metadata"
-                      src={draftContent.musicAudioUrl}
-                      className="w-full h-10"
-                    />
-                  ) : (
-                    <div className="p-3 rounded-lg bg-[#07543E]/60 border border-[#C5A04A]/30 text-xs text-[#FAF7F0]/80 leading-relaxed">
-                      No wedding audio file uploaded yet. Upload your licensed MP3, M4A, or AAC track using the buttons on the right.
-                    </div>
-                  )}
-                </div>
-
-                <p className="text-xs text-[#262820]/65 break-all">
-                  {draftContent.musicAudioFileId
-                    ? `Google Drive File: ${draftContent.musicAudioFileName || draftContent.musicAudioFileId}`
-                    : 'Track status: Awaiting audio file'}
+          {/* Quick Link to Full Music Library & Song Suggestions */}
+          <section className="p-6 sm:p-8 rounded-xl bg-[#FFFDF8] border border-[#C5A04A]/35 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Music className="w-5 h-5 text-[#07543E] mt-1 shrink-0" />
+              <div>
+                <h2 className="font-serif text-2xl font-semibold text-[#07543E]">
+                  Music Library &amp; Guest Song Suggestions
+                </h2>
+                <p className="text-xs sm:text-sm text-[#262820]/75 mt-0.5">
+                  Manage multiple celebration songs, choose the default opening track, and review private guest requests from puzzle winners.
                 </p>
               </div>
-
-              {/* Song Details & Audio File Controls */}
-              <div className="md:col-span-7 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      htmlFor="music-title-input"
-                      className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
-                    >
-                      Song Title
-                    </label>
-                    <input
-                      id="music-title-input"
-                      type="text"
-                      maxLength={120}
-                      value={draftContent.musicTitle ?? ''}
-                      onChange={(e) =>
-                        setDraftContent((d) => ({ ...d, musicTitle: e.target.value }))
-                      }
-                      placeholder="Perfect"
-                      className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-lg border border-[#07543E]/20 bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="music-artist-input"
-                      className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
-                    >
-                      Artist Name
-                    </label>
-                    <input
-                      id="music-artist-input"
-                      type="text"
-                      maxLength={120}
-                      value={draftContent.musicArtist ?? ''}
-                      onChange={(e) =>
-                        setDraftContent((d) => ({ ...d, musicArtist: e.target.value }))
-                      }
-                      placeholder="Ed Sheeran"
-                      className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-lg border border-[#07543E]/20 bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <label
-                    htmlFor="admin-music-upload-input"
-                    className={`inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-[#07543E] text-xs font-semibold uppercase tracking-wider ${
-                      musicAudioUploading ? 'opacity-60 pointer-events-none' : 'cursor-pointer'
-                    }`}
-                  >
-                    {musicAudioUploading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4 text-[#C5A04A]" />
-                    )}
-                    <span>
-                      {musicAudioUploading
-                        ? `Uploading (${musicAudioProgress}%)...`
-                        : 'Upload New Music'}
-                    </span>
-                  </label>
-                  <input
-                    ref={musicFileInputRef}
-                    id="admin-music-upload-input"
-                    type="file"
-                    accept={AUDIO_FILE_INPUT_ACCEPT}
-                    disabled={musicAudioUploading}
-                    onChange={(e) => void handleUploadMusicAudio(e)}
-                    className="sr-only"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setShowMusicPicker((prev) => !prev)}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
-                  >
-                    <Music className="w-4 h-4 text-[#C5A04A]" />
-                    <span>
-                      {showMusicPicker ? 'Hide Audio Picker' : 'Select Existing Audio File'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={musicAudioUploading}
-                    onClick={() => musicFileInputRef.current?.click()}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] disabled:opacity-60 text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 text-[#C5A04A]" />
-                    <span>Replace Music</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowMusicPreviewModal(true)}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg border border-[#C5A04A] bg-[#F2EBDD] hover:bg-[#EADFC9] text-[#07543E] text-xs font-semibold uppercase tracking-wider cursor-pointer"
-                  >
-                    <Eye className="w-4 h-4" />
-                    <span>Preview Music</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={savingContent || musicAudioUploading}
-                    onClick={() => void handleSaveSiteContent(draftContent)}
-                    className="inline-flex items-center justify-center gap-1.5 px-5 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-60 text-white text-xs font-bold uppercase tracking-wider cursor-pointer sm:ml-auto"
-                  >
-                    {savingContent ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4 text-[#C5A04A]" />
-                    )}
-                    <span>Save Changes</span>
-                  </button>
-                </div>
-
-                {/* Expandable Existing Audio File Picker */}
-                {showMusicPicker && (
-                  <div className="p-4 rounded-xl bg-white border border-[#07543E]/15 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-[#737746]">
-                        Uploaded Audio Files ({existingAudioTracks.length})
-                      </p>
-                      {draftContent.musicAudioUrl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDraftContent((d) => ({
-                              ...d,
-                              musicAudioFileId: '',
-                              musicAudioUrl: '',
-                              musicAudioFileName: ''
-                            }));
-                            setShowMusicPicker(false);
-                          }}
-                          className="text-xs font-semibold text-red-700 hover:underline cursor-pointer"
-                        >
-                          Clear Current Audio
-                        </button>
-                      )}
-                    </div>
-
-                    {existingAudioTracks.length === 0 ? (
-                      <p className="text-xs sm:text-sm text-[#262820]/65 py-2">
-                        No audio files have been uploaded to Google Drive yet. Click &ldquo;Upload New Music&rdquo; to add one.
-                      </p>
-                    ) : (
-                      <div className="divide-y divide-[#07543E]/10 max-h-56 overflow-y-auto rounded-lg border border-[#07543E]/12">
-                        {existingAudioTracks.map((track) => {
-                          const isSelected = draftContent.musicAudioFileId === track.driveFileId;
-                          return (
-                            <button
-                              key={track.id}
-                              type="button"
-                              onClick={() => {
-                                setDraftContent((d) => ({
-                                  ...d,
-                                  musicAudioFileId: track.driveFileId,
-                                  musicAudioUrl: track.fileUrl,
-                                  musicAudioFileName: track.title
-                                }));
-                                setShowMusicPicker(false);
-                              }}
-                              className={`w-full px-3.5 py-2.5 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                                isSelected ? 'bg-[#07543E]/8' : 'hover:bg-[#FAF7F0]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <Music className="w-4 h-4 text-[#C5A04A] shrink-0" />
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-[#07543E] truncate">
-                                    {track.title}
-                                  </p>
-                                  <p className="text-xs text-[#262820]/65">
-                                    {formatFileSize(track.sizeBytes)} · {track.mimeType}
-                                  </p>
-                                </div>
-                              </div>
-                              {isSelected && (
-                                <span className="text-xs font-semibold text-[#07543E] shrink-0">
-                                  Selected
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('music')}
+              className="inline-flex items-center justify-center gap-2 px-5 min-h-[44px] rounded-lg bg-[#07543E] hover:bg-[#073B2B] text-white text-xs font-bold uppercase tracking-wider cursor-pointer shrink-0"
+            >
+              <Music className="w-4 h-4 text-[#F3E5AB]" />
+              <span>Open Music Library</span>
+            </button>
           </section>
 
           <form
@@ -3604,78 +3688,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               coupleNames={draftContent.coupleNames}
               isPreviewModal
             />
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Music Preview Modal */}
-      {showMusicPreviewModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Wedding Background Music Preview"
-          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setShowMusicPreviewModal(false)}
-        >
-          <div
-            className="relative w-full max-w-md bg-[#FAF7F0] rounded-2xl border border-[#C5A04A]/50 p-6 shadow-2xl space-y-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-[#737746] font-semibold">
-                  Admin Audio Preview
-                </p>
-                <h3 className="font-serif text-2xl font-semibold text-[#07543E]">
-                  Website Background Music
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowMusicPreviewModal(false)}
-                aria-label="Close music preview"
-                className="w-11 h-11 rounded-full bg-white border border-[#07543E]/15 hover:bg-[#F2EBDD] text-[#07543E] flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#073B2B] border border-[#C5A04A]/55 text-[#FAF7F0] space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-lg bg-[#07543E] border border-[#C5A04A]/45 flex items-center justify-center text-[#F3E5AB] shrink-0">
-                  <Music className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-serif text-lg font-semibold text-[#FAF7F0] truncate">
-                    {draftContent.musicTitle || 'Perfect'}
-                  </p>
-                  <p className="text-xs text-[#E6CE8A] truncate">
-                    {draftContent.musicArtist || 'Ed Sheeran'}
-                  </p>
-                </div>
-              </div>
-
-              {draftContent.musicAudioUrl ? (
-                <audio
-                  controls
-                  autoPlay={false}
-                  preload="metadata"
-                  src={draftContent.musicAudioUrl}
-                  className="w-full"
-                />
-              ) : (
-                <p className="text-xs text-[#FAF7F0]/80">
-                  No audio file is currently selected. Upload an MP3, M4A, or AAC track first.
-                </p>
-              )}
-            </div>
-
-            <p className="text-xs text-[#262820]/70 leading-relaxed">
-              Visibility on public website:{' '}
-              <strong>
-                {draftContent.musicEnabled !== false ? 'Enabled (Header control visible)' : 'Hidden'}
-              </strong>
-            </p>
           </div>
         </div>
       )}

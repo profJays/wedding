@@ -293,3 +293,62 @@
     animation: none !important;
   }
 }
+
+/* ============================================================================
+   Centralized Section-by-Section Typography Custom Properties
+   Only activates when an admin explicitly configures a property for a section.
+============================================================================ */
+[data-typo-section][data-t-heading-font="1"] [data-typo="heading"] { font-family: var(--t-heading-font); }
+[data-typo-section][data-t-heading-size="1"] [data-typo="heading"] { font-size: var(--t-heading-size); }
+[data-typo-section][data-t-heading-weight="1"] [data-typo="heading"] { font-weight: var(--t-heading-weight); }
+[data-typo-section][data-t-heading-style="1"] [data-typo="heading"] { font-style: var(--t-heading-style); }
+[data-typo-section][data-t-heading-align="1"] [data-typo="heading"] { text-align: var(--t-heading-align); }
+[data-typo-section][data-t-heading-lh="1"] [data-typo="heading"] { line-height: var(--t-heading-lh); }
+[data-typo-section][data-t-heading-ls="1"] [data-typo="heading"] { letter-spacing: var(--t-heading-ls); }
+[data-typo-section][data-t-heading-color="1"] [data-typo="heading"] { color: var(--t-heading-color); }
+
+[data-typo-section][data-t-subheading-font="1"] [data-typo="subheading"] { font-family: var(--t-subheading-font); }
+[data-typo-section][data-t-subheading-size="1"] [data-typo="subheading"] { font-size: var(--t-subheading-size); }
+[data-typo-section][data-t-subheading-weight="1"] [data-typo="subheading"] { font-weight: var(--t-subheading-weight); }
+[data-typo-section][data-t-subheading-style="1"] [data-typo="subheading"] { font-style: var(--t-subheading-style); }
+[data-typo-section][data-t-subheading-align="1"] [data-typo="subheading"] { text-align: var(--t-subheading-align); }
+[data-typo-section][data-t-subheading-lh="1"] [data-typo="subheading"] { line-height: var(--t-subheading-lh); }
+[data-typo-section][data-t-subheading-ls="1"] [data-typo="subheading"] { letter-spacing: var(--t-subheading-ls); }
+[data-typo-section][data-t-subheading-color="1"] [data-typo="subheading"] { color: var(--t-subheading-color); }
+
+[data-typo-section][data-t-body-font="1"] [data-typo="body"] { font-family: var(--t-body-font); }
+[data-typo-section][data-t-body-size="1"] [data-typo="body"] { font-size: var(--t-body-size); }
+[data-typo-section][data-t-body-weight="1"] [data-typo="body"] { font-weight: var(--t-body-weight); }
+[data-typo-section][data-t-body-style="1"] [data-typo="body"] { font-style: var(--t-body-style); }
+[data-typo-section][data-t-body-align="1"] [data-typo="body"] { text-align: var(--t-body-align); }
+[data-typo-section][data-t-body-lh="1"] [data-typo="body"] { line-height: var(--t-body-lh); }
+[data-typo-section][data-t-body-ls="1"] [data-typo="body"] { letter-spacing: var(--t-body-ls); }
+[data-typo-section][data-t-body-color="1"] [data-typo="body"] { color: var(--t-body-color); }
+
+[data-typo-section][data-t-label-font="1"] [data-typo="label"] { font-family: var(--t-label-font); }
+[data-typo-section][data-t-label-size="1"] [data-typo="label"] { font-size: var(--t-label-size); }
+[data-typo-section][data-t-label-weight="1"] [data-typo="label"] { font-weight: var(--t-label-weight); }
+[data-typo-section][data-t-label-style="1"] [data-typo="label"] { font-style: var(--t-label-style); }
+[data-typo-section][data-t-label-align="1"] [data-typo="label"] { text-align: var(--t-label-align); }
+[data-typo-section][data-t-label-lh="1"] [data-typo="label"] { line-height: var(--t-label-lh); }
+[data-typo-section][data-t-label-ls="1"] [data-typo="label"] { letter-spacing: var(--t-label-ls); }
+[data-typo-section][data-t-label-color="1"] [data-typo="label"] { color: var(--t-label-color); }
+
+[data-typo-section][data-t-caption-font="1"] [data-typo="caption"] { font-family: var(--t-caption-font); }
+[data-typo-section][data-t-caption-size="1"] [data-typo="caption"] { font-size: var(--t-caption-size); }
+[data-typo-section][data-t-caption-weight="1"] [data-typo="caption"] { font-weight: var(--t-caption-weight); }
+[data-typo-section][data-t-caption-style="1"] [data-typo="caption"] { font-style: var(--t-caption-style); }
+[data-typo-section][data-t-caption-align="1"] [data-typo="caption"] { text-align: var(--t-caption-align); }
+[data-typo-section][data-t-caption-lh="1"] [data-typo="caption"] { line-height: var(--t-caption-lh); }
+[data-typo-section][data-t-caption-ls="1"] [data-typo="caption"] { letter-spacing: var(--t-caption-ls); }
+[data-typo-section][data-t-caption-color="1"] [data-typo="caption"] { color: var(--t-caption-color); }
+
+[data-typo-section][data-t-button-font="1"] [data-typo="button"] { font-family: var(--t-button-font); }
+[data-typo-section][data-t-button-size="1"] [data-typo="button"] { font-size: var(--t-button-size); }
+[data-typo-section][data-t-button-weight="1"] [data-typo="button"] { font-weight: var(--t-button-weight); }
+[data-typo-section][data-t-button-style="1"] [data-typo="button"] { font-style: var(--t-button-style); }
+[data-typo-section][data-t-button-align="1"] [data-typo="button"] { text-align: var(--t-button-align); }
+[data-typo-section][data-t-button-lh="1"] [data-typo="button"] { line-height: var(--t-button-lh); }
+[data-typo-section][data-t-button-ls="1"] [data-typo="button"] { letter-spacing: var(--t-button-ls); }
+[data-typo-section][data-t-button-color="1"] [data-typo="button"] { color: var(--t-button-color); }
+

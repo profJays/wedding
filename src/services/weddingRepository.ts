@@ -21,11 +21,16 @@ import {
 } from './firebase';
 import { DEFAULT_SITE_CONTENT } from '../data/weddingSite';
 import { getDriveAccessToken, clearExpiredDriveToken } from './driveOAuth';
+import { sanitizeSectionTypographyMap } from '../utils/typography';
 import {
   SiteContentData,
   RsvpRecord,
   GalleryItem,
   AdminUser,
+  MusicTrack,
+  SongSuggestion,
+  SongSuggestionStatus,
+  SlideshowSlideItem,
   GalleryServerStatus,
   DriveConnectionStatus,
   DriveTestConnectionResponse,
@@ -126,6 +131,69 @@ export function subscribeSiteContent(
           typeof raw.musicAudioFileName === 'string'
             ? raw.musicAudioFileName
             : DEFAULT_SITE_CONTENT.musicAudioFileName,
+        giftingEnabled:
+          typeof raw.giftingEnabled === 'boolean'
+            ? raw.giftingEnabled
+            : DEFAULT_SITE_CONTENT.giftingEnabled,
+        giftingHeading:
+          typeof raw.giftingHeading === 'string' && raw.giftingHeading.trim().length > 0
+            ? raw.giftingHeading
+            : DEFAULT_SITE_CONTENT.giftingHeading,
+        giftingIntro:
+          typeof raw.giftingIntro === 'string' && raw.giftingIntro.trim().length > 0
+            ? raw.giftingIntro
+            : DEFAULT_SITE_CONTENT.giftingIntro,
+        giftingClosing:
+          typeof raw.giftingClosing === 'string' && raw.giftingClosing.trim().length > 0
+            ? raw.giftingClosing
+            : DEFAULT_SITE_CONTENT.giftingClosing,
+        giftingAccountName:
+          typeof raw.giftingAccountName === 'string' && raw.giftingAccountName.trim().length > 0
+            ? raw.giftingAccountName
+            : DEFAULT_SITE_CONTENT.giftingAccountName,
+        giftingBankName:
+          typeof raw.giftingBankName === 'string' && raw.giftingBankName.trim().length > 0
+            ? raw.giftingBankName
+            : DEFAULT_SITE_CONTENT.giftingBankName,
+        giftingAccountNumber:
+          typeof raw.giftingAccountNumber === 'string' && raw.giftingAccountNumber.trim().length > 0
+            ? raw.giftingAccountNumber
+            : DEFAULT_SITE_CONTENT.giftingAccountNumber,
+        sectionTypography: sanitizeSectionTypographyMap(raw.sectionTypography),
+        slideshowAutoplay:
+          typeof raw.slideshowAutoplay === 'boolean'
+            ? raw.slideshowAutoplay
+            : DEFAULT_SITE_CONTENT.slideshowAutoplay,
+        slideshowIntervalMs:
+          typeof raw.slideshowIntervalMs === 'number' &&
+          Number.isFinite(raw.slideshowIntervalMs) &&
+          raw.slideshowIntervalMs >= 2000 &&
+          raw.slideshowIntervalMs <= 30000
+            ? Math.trunc(raw.slideshowIntervalMs)
+            : DEFAULT_SITE_CONTENT.slideshowIntervalMs,
+        slideshowItems: Array.isArray(raw.slideshowItems)
+          ? raw.slideshowItems
+              .filter(
+                (item): item is SlideshowSlideItem =>
+                  Boolean(item && typeof item === 'object' && typeof item.fileUrl === 'string' && item.fileUrl.trim() && !item.fileUrl.trim().startsWith('blob:'))
+              )
+              .slice(0, 30)
+              .map((item, idx) => ({
+                id: String(item.id || `slide_${idx}`).slice(0, 80),
+                title: String(item.title || 'Wedding Highlight').slice(0, 120),
+                caption: typeof item.caption === 'string' ? item.caption.slice(0, 200) : '',
+                fileUrl: item.fileUrl.trim().slice(0, 500),
+                driveFileId: typeof item.driveFileId === 'string' ? item.driveFileId.slice(0, 200) : '',
+                storageProvider: (
+                  item.storageProvider === 'google_drive' || item.storageProvider === 'local_server'
+                    ? item.storageProvider
+                    : 'site_asset'
+                ) as SlideshowSlideItem['storageProvider'],
+                enabled: item.enabled !== false,
+                order: typeof item.order === 'number' && Number.isFinite(item.order) ? Math.trunc(item.order) : idx
+              }))
+              .sort((a, b) => a.order - b.order)
+          : DEFAULT_SITE_CONTENT.slideshowItems,
         welcomeParagraphs: Array.isArray(raw.welcomeParagraphs) && raw.welcomeParagraphs.length > 0
           ? raw.welcomeParagraphs
           : DEFAULT_SITE_CONTENT.welcomeParagraphs,
@@ -147,6 +215,92 @@ export function subscribeSiteContent(
   );
 }
 
+export function sanitizeSlideshowItems(
+  items: SlideshowSlideItem[] | undefined
+): SlideshowSlideItem[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((s) => {
+      if (!s || typeof s.fileUrl !== 'string') return false;
+      const cleanUrl = s.fileUrl.trim();
+      if (!cleanUrl || cleanUrl.startsWith('blob:')) return false;
+      if (s.storageProvider === 'google_drive' && !cleanUrl.includes('/api/gallery/drive/') && !(s.driveFileId || '').trim()) {
+        return false;
+      }
+      return true;
+    })
+    .slice(0, 30)
+    .map((s, idx) => ({
+      id: (s.id || `slide_${idx}`).trim().slice(0, 80),
+      title: (s.title || 'Wedding Highlight').trim().slice(0, 120),
+      caption: (s.caption || '').trim().slice(0, 200),
+      fileUrl: s.fileUrl.trim().slice(0, 500),
+      driveFileId: (s.driveFileId || '').trim().slice(0, 200),
+      storageProvider:
+        s.storageProvider === 'google_drive' || s.storageProvider === 'local_server'
+          ? s.storageProvider
+          : 'site_asset',
+      enabled: s.enabled !== false,
+      order: idx
+    }));
+}
+
+export async function saveSlideshowSettings(settings: {
+  slideshowAutoplay: boolean;
+  slideshowIntervalMs: number;
+  slideshowItems: SlideshowSlideItem[];
+}): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('Administrator authentication is required.');
+  }
+
+  const rawItems = Array.isArray(settings.slideshowItems) ? settings.slideshowItems : [];
+  const hasIncompleteUpload = rawItems.some(
+    (item) =>
+      !item ||
+      typeof item.fileUrl !== 'string' ||
+      !item.fileUrl.trim() ||
+      item.fileUrl.trim().startsWith('blob:')
+  );
+  if (hasIncompleteUpload) {
+    throw new Error(
+      'One or more slideshow images do not have a saved media URL yet. Please wait for uploads to finish before saving.'
+    );
+  }
+
+  const slideshowAutoplay = settings.slideshowAutoplay !== false;
+  const slideshowIntervalMs = Math.max(
+    2000,
+    Math.min(30000, Math.trunc(settings.slideshowIntervalMs || 5000))
+  );
+  const slideshowItems = sanitizeSlideshowItems(rawItems);
+
+  const siteContentRef = doc(db, 'siteContent', 'main');
+  try {
+    const existingSnap = await getDoc(siteContentRef);
+    if (!existingSnap.exists()) {
+      await saveSiteContent({
+        ...DEFAULT_SITE_CONTENT,
+        slideshowAutoplay,
+        slideshowIntervalMs,
+        slideshowItems
+      });
+      return;
+    }
+
+    await updateDoc(siteContentRef, {
+      slideshowAutoplay,
+      slideshowIntervalMs,
+      slideshowItems,
+      updatedAt: serverTimestamp(),
+      updatedByUid: uid
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, SITE_CONTENT_DOC_PATH);
+  }
+}
+
 export async function saveSiteContent(content: SiteContentData): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (!uid) {
@@ -165,30 +319,37 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
       ? rawMusicUrl.slice(0, 500)
       : '';
 
+  const safeWelcomeParagraphs = (Array.isArray(content.welcomeParagraphs) ? content.welcomeParagraphs : [])
+    .filter((p) => typeof p === 'string' && p.trim().length > 0)
+    .slice(0, 12);
+  const safeStoryParagraphs = (Array.isArray(content.storyParagraphs) ? content.storyParagraphs : [])
+    .filter((p) => typeof p === 'string' && p.trim().length > 0)
+    .slice(0, 20);
+
   const unlockMs = new Date(content.galleryUnlockISO).getTime();
   const payload = {
-    coupleNames: content.coupleNames.trim().slice(0, 100),
-    brideName: content.brideName.trim().slice(0, 50),
-    groomName: content.groomName.trim().slice(0, 50),
-    hashtag: content.hashtag.trim().slice(0, 40),
-    weddingDateDisplay: content.weddingDateDisplay.trim().slice(0, 80),
-    ceremonyTargetISO: content.ceremonyTargetISO.trim().slice(0, 40),
-    galleryUnlockISO: content.galleryUnlockISO.trim().slice(0, 40),
+    coupleNames: ((content.coupleNames || '').trim() || DEFAULT_SITE_CONTENT.coupleNames).slice(0, 100),
+    brideName: ((content.brideName || '').trim() || DEFAULT_SITE_CONTENT.brideName).slice(0, 50),
+    groomName: ((content.groomName || '').trim() || DEFAULT_SITE_CONTENT.groomName).slice(0, 50),
+    hashtag: ((content.hashtag || '').trim() || DEFAULT_SITE_CONTENT.hashtag).slice(0, 40),
+    weddingDateDisplay: (content.weddingDateDisplay || '').trim().slice(0, 80),
+    ceremonyTargetISO: (content.ceremonyTargetISO || '').trim().slice(0, 40),
+    galleryUnlockISO: (content.galleryUnlockISO || '').trim().slice(0, 40),
     galleryUnlockEpochMs: Number.isFinite(unlockMs) && unlockMs > 0
       ? Math.trunc(unlockMs)
       : DEFAULT_SITE_CONTENT.galleryUnlockEpochMs,
-    mainVenue: content.mainVenue.trim().slice(0, 240),
-    heroImageUrl: content.heroImageUrl.trim().slice(0, 500),
+    mainVenue: (content.mainVenue || '').trim().slice(0, 240),
+    heroImageUrl: ((content.heroImageUrl || '').trim() || DEFAULT_SITE_CONTENT.heroImageUrl).slice(0, 500),
     contactName: (content.contactName || '').trim().slice(0, 80),
     contactPhone: (content.contactPhone || '').trim().slice(0, 40),
-    welcomeHeading: content.welcomeHeading.trim().slice(0, 160),
-    welcomeParagraphs: content.welcomeParagraphs.filter((p) => p.trim().length > 0).slice(0, 12),
-    welcomeSignOff: content.welcomeSignOff.trim().slice(0, 120),
-    storyHeading: content.storyHeading.trim().slice(0, 160),
-    storyParagraphs: content.storyParagraphs.filter((p) => p.trim().length > 0).slice(0, 20),
-    coupleQas: content.coupleQas.slice(0, 30),
-    scheduleEvents: content.scheduleEvents.slice(0, 20),
-    guestFaqs: content.guestFaqs.slice(0, 30),
+    welcomeHeading: ((content.welcomeHeading || '').trim() || DEFAULT_SITE_CONTENT.welcomeHeading).slice(0, 160),
+    welcomeParagraphs: safeWelcomeParagraphs.length > 0 ? safeWelcomeParagraphs : DEFAULT_SITE_CONTENT.welcomeParagraphs,
+    welcomeSignOff: (content.welcomeSignOff || '').trim().slice(0, 120),
+    storyHeading: ((content.storyHeading || '').trim() || DEFAULT_SITE_CONTENT.storyHeading).slice(0, 160),
+    storyParagraphs: safeStoryParagraphs.length > 0 ? safeStoryParagraphs : DEFAULT_SITE_CONTENT.storyParagraphs,
+    coupleQas: (Array.isArray(content.coupleQas) ? content.coupleQas : []).slice(0, 30),
+    scheduleEvents: (Array.isArray(content.scheduleEvents) ? content.scheduleEvents : []).slice(0, 20),
+    guestFaqs: (Array.isArray(content.guestFaqs) ? content.guestFaqs : []).slice(0, 30),
     footerNote: (content.footerNote || '').trim().slice(0, 200),
     rsvpOpen: Boolean(content.rsvpOpen),
     maxGuestsPerRsvp: Math.max(1, Math.min(10, Math.trunc(content.maxGuestsPerRsvp || 1))),
@@ -205,6 +366,44 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
     musicAudioFileId: safeMusicUrl ? (content.musicAudioFileId || '').trim().slice(0, 200) : '',
     musicAudioUrl: safeMusicUrl,
     musicAudioFileName: safeMusicUrl ? (content.musicAudioFileName || '').trim().slice(0, 160) : '',
+    giftingEnabled: content.giftingEnabled !== false,
+    giftingHeading: (
+      (content.giftingHeading || '').trim() ||
+      DEFAULT_SITE_CONTENT.giftingHeading ||
+      'Gifting & Support'
+    ).slice(0, 120),
+    giftingIntro: (
+      (content.giftingIntro || '').trim() ||
+      DEFAULT_SITE_CONTENT.giftingIntro ||
+      ''
+    ).slice(0, 500),
+    giftingClosing: (
+      (content.giftingClosing || '').trim() ||
+      DEFAULT_SITE_CONTENT.giftingClosing ||
+      'Thank you for celebrating with us.'
+    ).slice(0, 200),
+    giftingAccountName: (
+      (content.giftingAccountName || '').trim() ||
+      DEFAULT_SITE_CONTENT.giftingAccountName ||
+      'Joseph John'
+    ).slice(0, 120),
+    giftingBankName: (
+      (content.giftingBankName || '').trim() ||
+      DEFAULT_SITE_CONTENT.giftingBankName ||
+      'Opay'
+    ).slice(0, 120),
+    giftingAccountNumber: (
+      (content.giftingAccountNumber || '').trim() ||
+      DEFAULT_SITE_CONTENT.giftingAccountNumber ||
+      '8065013009'
+    ).slice(0, 60),
+    sectionTypography: sanitizeSectionTypographyMap(content.sectionTypography),
+    slideshowAutoplay: content.slideshowAutoplay !== false,
+    slideshowIntervalMs: Math.max(
+      2000,
+      Math.min(30000, Math.trunc(content.slideshowIntervalMs || 5000))
+    ),
+    slideshowItems: sanitizeSlideshowItems(content.slideshowItems),
     updatedAt: serverTimestamp(),
     updatedByUid: uid
   };
@@ -941,6 +1140,7 @@ export async function uploadGalleryMediaFiles(params: {
   caption: string;
   category?: DriveMediaCategory;
   isAdmin?: boolean;
+  forceStatus?: 'approved' | 'hidden' | 'pending';
   onProgress?: (percent: number) => void;
 }): Promise<UploadMediaBatchOutcome> {
   const idToken =
@@ -1022,8 +1222,14 @@ export async function uploadGalleryMediaFiles(params: {
     const itemId = `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const title = (params.caption.trim() || uploaded.originalName || 'Wedding Moment').slice(0, 160);
     const guestName = params.guestName.trim().slice(0, 80);
-    const status =
-      uploaded.mediaType === 'audio' ? 'hidden' : params.isAdmin ? 'approved' : 'pending';
+    const status: 'approved' | 'hidden' | 'pending' =
+      uploaded.mediaType === 'audio'
+        ? 'hidden'
+        : params.isAdmin && params.forceStatus
+        ? params.forceStatus
+        : params.isAdmin
+        ? 'approved'
+        : 'pending';
 
     try {
       await setDoc(doc(db, 'galleryItems', itemId), {
@@ -1140,7 +1346,8 @@ export async function deleteGalleryItem(item: GalleryItem): Promise<void> {
 async function adminDriveFetch<T>(
   endpoint: string,
   method: 'GET' | 'POST',
-  driveAccessToken?: string
+  driveAccessToken?: string,
+  jsonBody?: Record<string, unknown>
 ): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new Error('Administrator sign-in is required.');
@@ -1151,8 +1358,15 @@ async function adminDriveFetch<T>(
   if (driveAccessToken) {
     headers['X-Google-Drive-Token'] = driveAccessToken;
   }
+  if (jsonBody !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
 
-  const res = await fetch(endpoint, { method, headers });
+  const res = await fetch(endpoint, {
+    method,
+    headers,
+    body: jsonBody !== undefined ? JSON.stringify(jsonBody) : undefined
+  });
   const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
   if (!res.ok) {
     if (res.status === 401 && body.code === 'DRIVE_AUTH_EXPIRED') {
@@ -1161,6 +1375,13 @@ async function adminDriveFetch<T>(
     throw new Error(body.error || `Drive request failed (${res.status})`);
   }
   return body as T;
+}
+
+export function startServerDriveOAuth(): Promise<{ authUrl: string; redirectUri: string }> {
+  return adminDriveFetch<{ authUrl: string; redirectUri: string }>(
+    '/api/drive/oauth/start',
+    'POST'
+  );
 }
 
 export function fetchDriveConnectionStatusAdmin(): Promise<DriveConnectionStatus> {
@@ -1191,6 +1412,7 @@ export function testDriveConnectionWithServer(
 }
 
 export function testServerRefreshTokenWithServer(): Promise<DriveTestConnectionResponse> {
+  // Never send X-Google-Drive-Token here: server refresh test must strictly validate server refresh token only
   return adminDriveFetch<DriveTestConnectionResponse>('/api/drive/test-refresh', 'POST');
 }
 
@@ -1304,3 +1526,264 @@ export async function removeAdminUser(uid: string): Promise<void> {
     handleFirestoreError(error, OperationType.DELETE, `admins/${uid}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// 6. Music Library (`musicTracks`) & Private Song Suggestions (`songSuggestions`)
+// ---------------------------------------------------------------------------
+function mapMusicTrackDoc(id: string, data: Record<string, unknown>): MusicTrack {
+  return {
+    id,
+    title: String(data.title || 'Untitled Song'),
+    artist: String(data.artist || 'Wedding Celebration'),
+    fileUrl: String(data.fileUrl || ''),
+    driveFileId: String(data.driveFileId || ''),
+    fileName: String(data.fileName || ''),
+    storageProvider:
+      data.storageProvider === 'google_drive' || data.storageProvider === 'local_server'
+        ? data.storageProvider
+        : 'site_asset',
+    enabled: data.enabled !== false,
+    isDefault: Boolean(data.isDefault),
+    order: typeof data.order === 'number' && Number.isFinite(data.order) ? Math.trunc(data.order) : 0,
+    createdAt: toJsDate(data.createdAt),
+    updatedAt: toJsDate(data.updatedAt),
+    updatedByUid: String(data.updatedByUid || '')
+  };
+}
+
+export function subscribeEnabledMusicTracks(
+  onData: (tracks: MusicTrack[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const q = query(collection(db, 'musicTracks'), where('enabled', '==', true));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const tracks = snap.docs
+        .map((d) => mapMusicTrackDoc(d.id, d.data() as Record<string, unknown>))
+        .filter((t) => Boolean(t.fileUrl && !t.fileUrl.startsWith('blob:')))
+        .sort((a, b) => a.order - b.order || (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0));
+      onData(tracks);
+    },
+    (error) => {
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function listAllMusicTracksAdmin(): Promise<MusicTrack[]> {
+  try {
+    const snap = await getDocs(collection(db, 'musicTracks'));
+    return snap.docs
+      .map((d) => mapMusicTrackDoc(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.order - b.order || (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'musicTracks');
+  }
+}
+
+export async function createMusicTrackAdmin(input: {
+  title: string;
+  artist: string;
+  fileUrl: string;
+  driveFileId: string;
+  fileName: string;
+  storageProvider: 'google_drive' | 'local_server' | 'site_asset';
+  enabled: boolean;
+  isDefault: boolean;
+  order: number;
+}): Promise<MusicTrack> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Administrator authentication is required.');
+
+  const cleanUrl = input.fileUrl.trim();
+  if (!cleanUrl || cleanUrl.startsWith('blob:')) {
+    throw new Error('A valid uploaded audio file URL is required.');
+  }
+
+  const trackId = `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const payload = {
+    title: (input.title.trim() || 'Wedding Song').slice(0, 120),
+    artist: (input.artist.trim() || 'Wedding Artist').slice(0, 120),
+    fileUrl: cleanUrl.slice(0, 500),
+    driveFileId: (input.driveFileId || '').trim().slice(0, 200),
+    fileName: (input.fileName || '').trim().slice(0, 160),
+    storageProvider: input.storageProvider,
+    enabled: Boolean(input.enabled),
+    isDefault: Boolean(input.isDefault),
+    order: Math.max(0, Math.min(1000, Math.trunc(input.order))),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    updatedByUid: uid
+  };
+
+  try {
+    await setDoc(doc(db, 'musicTracks', trackId), payload);
+    return {
+      id: trackId,
+      ...payload,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `musicTracks/${trackId}`);
+  }
+}
+
+export async function updateMusicTrackAdmin(
+  trackId: string,
+  updates: {
+    title: string;
+    artist: string;
+    fileUrl: string;
+    driveFileId: string;
+    fileName: string;
+    storageProvider: 'google_drive' | 'local_server' | 'site_asset';
+    enabled: boolean;
+    isDefault: boolean;
+    order: number;
+  }
+): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Administrator authentication is required.');
+
+  const cleanUrl = updates.fileUrl.trim();
+  if (!cleanUrl || cleanUrl.startsWith('blob:')) {
+    throw new Error('A valid uploaded audio file URL is required.');
+  }
+
+  try {
+    await updateDoc(doc(db, 'musicTracks', trackId), {
+      title: (updates.title.trim() || 'Wedding Song').slice(0, 120),
+      artist: (updates.artist.trim() || 'Wedding Artist').slice(0, 120),
+      fileUrl: cleanUrl.slice(0, 500),
+      driveFileId: (updates.driveFileId || '').trim().slice(0, 200),
+      fileName: (updates.fileName || '').trim().slice(0, 160),
+      storageProvider: updates.storageProvider,
+      enabled: Boolean(updates.enabled),
+      isDefault: Boolean(updates.isDefault),
+      order: Math.max(0, Math.min(1000, Math.trunc(updates.order))),
+      updatedAt: serverTimestamp(),
+      updatedByUid: uid
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `musicTracks/${trackId}`);
+  }
+}
+
+export async function deleteMusicTrackAdmin(trackId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'musicTracks', trackId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `musicTracks/${trackId}`);
+  }
+}
+
+export function normalizeSongSuggestionKey(title: string, artist: string): string {
+  const cleanTitle = title.trim().toLowerCase().replace(/\s+/g, ' ');
+  const cleanArtist = artist.trim().toLowerCase().replace(/\s+/g, ' ');
+  return `${cleanTitle}::${cleanArtist}`.slice(0, 200);
+}
+
+export function buildSongSuggestionId(title: string, artist: string): string {
+  const normalized = normalizeSongSuggestionKey(title, artist);
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64);
+
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i++) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const suffix = (hash >>> 0).toString(36);
+  return `sugg_${slug || 'song'}_${suffix}`;
+}
+
+export async function submitGuestSongSuggestion(input: {
+  title: string;
+  artist?: string;
+}): Promise<{ id: string; alreadySuggested: boolean }> {
+  const cleanTitle = input.title.trim();
+  const cleanArtist = (input.artist || '').trim();
+  if (cleanTitle.length < 1 || cleanTitle.length > 120) {
+    throw new Error('Please enter a song title (up to 120 characters).');
+  }
+  if (cleanArtist.length > 120) {
+    throw new Error('Artist name must be 120 characters or fewer.');
+  }
+
+  const normalizedKey = normalizeSongSuggestionKey(cleanTitle, cleanArtist);
+  const docId = buildSongSuggestionId(cleanTitle, cleanArtist);
+
+  try {
+    await setDoc(doc(db, 'songSuggestions', docId), {
+      title: cleanTitle,
+      artist: cleanArtist,
+      normalizedKey,
+      status: 'new',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    return { id: docId, alreadySuggested: false };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    // Deterministic ID + write-once create rule blocks duplicate spam cleanly
+    if (msg.includes('permission') || msg.includes('insufficient')) {
+      return { id: docId, alreadySuggested: true };
+    }
+    handleFirestoreError(error, OperationType.CREATE, `songSuggestions/${docId}`);
+  }
+}
+
+export async function listSongSuggestionsAdmin(): Promise<SongSuggestion[]> {
+  try {
+    const snap = await getDocs(collection(db, 'songSuggestions'));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        const status =
+          data.status === 'reviewed' || data.status === 'added' || data.status === 'declined'
+            ? data.status
+            : 'new';
+        return {
+          id: d.id,
+          title: String(data.title || ''),
+          artist: String(data.artist || ''),
+          normalizedKey: String(data.normalizedKey || ''),
+          status: status as SongSuggestionStatus,
+          createdAt: toJsDate(data.createdAt),
+          updatedAt: toJsDate(data.updatedAt)
+        };
+      })
+      .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'songSuggestions');
+  }
+}
+
+export async function updateSongSuggestionStatusAdmin(
+  id: string,
+  status: SongSuggestionStatus
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'songSuggestions', id), {
+      status,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `songSuggestions/${id}`);
+  }
+}
+
+export async function deleteSongSuggestionAdmin(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'songSuggestions', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `songSuggestions/${id}`);
+  }
+}
+

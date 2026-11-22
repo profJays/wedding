@@ -6,9 +6,22 @@ import {
   Shuffle,
   Sparkles,
   CheckCircle2,
-  Move
+  Move,
+  Music2,
+  Send,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { WEDDING_PHOTOS } from '../data/weddingSite';
+import {
+  MusicTrack,
+  SectionTypographyElements
+} from '../types';
+import {
+  normalizeSongSuggestionKey,
+  submitGuestSongSuggestion
+} from '../services/weddingRepository';
+import { getSectionTypographyProps } from '../utils/typography';
 import {
   PUZZLE_GRID_SIZE,
   PUZZLE_TILE_COUNT,
@@ -17,6 +30,9 @@ import {
   isPuzzleSolved,
   swapTiles
 } from '../utils/puzzleLogic';
+
+export const PUZZLE_REWARD_SESSION_KEY = 'mjay2026_puzzle_reward_unlocked';
+const SUBMITTED_SUGGESTIONS_SESSION_KEY = 'mjay2026_song_suggestions_submitted';
 
 interface ProcessedPuzzleImage {
   squareSrc: string | null;
@@ -176,12 +192,14 @@ export interface WeddingPuzzleBoardProps {
   imageUrl?: string;
   coupleNames: string;
   isPreviewModal?: boolean;
+  onSolved?: () => void;
 }
 
 export const WeddingPuzzleBoard: React.FC<WeddingPuzzleBoardProps> = ({
   imageUrl,
   coupleNames,
-  isPreviewModal = false
+  isPreviewModal = false,
+  onSolved
 }) => {
   const processed = useSquarePuzzleImage(imageUrl, WEDDING_PHOTOS.story.src);
 
@@ -224,10 +242,11 @@ export const WeddingPuzzleBoard: React.FC<WeddingPuzzleBoardProps> = ({
     if (solved && !celebrationFiredRef.current) {
       celebrationFiredRef.current = true;
       triggerCelebration();
+      onSolved?.();
     } else if (!solved) {
       celebrationFiredRef.current = false;
     }
-  }, [solved, triggerCelebration]);
+  }, [solved, triggerCelebration, onSolved]);
 
   const performSwap = useCallback(
     (slotA: number, slotB: number) => {
@@ -302,10 +321,16 @@ export const WeddingPuzzleBoard: React.FC<WeddingPuzzleBoardProps> = ({
       {/* Card Header & Live Typographic Progress Readout */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 mb-5 border-b border-[#07543E]/12">
         <div>
-          <h3 className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] leading-tight">
+          <h3
+            data-typo="subheading"
+            className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] leading-tight"
+          >
             Complete the puzzle
           </h3>
-          <p className="text-xs sm:text-sm text-[#262820]/75 mt-1">
+          <p
+            data-typo="caption"
+            className="text-xs sm:text-sm text-[#262820]/75 mt-1"
+          >
             Move the nine square pieces to rebuild the picture.
           </p>
         </div>
@@ -557,32 +582,364 @@ export const WeddingPuzzleBoard: React.FC<WeddingPuzzleBoardProps> = ({
 interface WeddingPhotoPuzzleSectionProps {
   puzzleImageUrl?: string;
   coupleNames: string;
+  musicEnabled?: boolean;
+  availableSongs?: MusicTrack[];
+  activeSongId?: string;
+  onSelectSong?: (track: MusicTrack) => Promise<{ startedPlaying: boolean; respectPaused: boolean }>;
+  typography?: SectionTypographyElements;
+}
+
+function readPuzzleUnlockedSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(PUZZLE_REWARD_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function readSubmittedSuggestionsSession(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.sessionStorage.getItem(SUBMITTED_SUGGESTIONS_SESSION_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps> = ({
   puzzleImageUrl,
-  coupleNames
+  coupleNames,
+  musicEnabled = true,
+  availableSongs = [],
+  activeSongId = '',
+  onSelectSong,
+  typography
 }) => {
+  const [rewardUnlocked, setRewardUnlocked] = useState<boolean>(() =>
+    readPuzzleUnlockedSession()
+  );
+  const [selectedNotice, setSelectedNotice] = useState<string | null>(null);
+  const [showSuggestForm, setShowSuggestForm] = useState(false);
+  const [suggestTitle, setSuggestTitle] = useState('');
+  const [suggestArtist, setSuggestArtist] = useState('');
+  const [suggestSubmitting, setSuggestSubmitting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [suggestSuccess, setSuggestSuccess] = useState<string | null>(null);
+  const [lastSuggestionAt, setLastSuggestionAt] = useState<number>(0);
+
+  const sectionTypoProps = getSectionTypographyProps('puzzle', typography);
+
+  const handlePuzzleSolved = useCallback(() => {
+    setRewardUnlocked(true);
+    try {
+      window.sessionStorage.setItem(PUZZLE_REWARD_SESSION_KEY, '1');
+    } catch {
+      // Ignore private mode storage limits
+    }
+  }, []);
+
+  const handleSongSelectChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const chosenId = e.target.value;
+    const track = availableSongs.find((s) => s.id === chosenId);
+    if (!track || !onSelectSong) return;
+
+    const outcome = await onSelectSong(track);
+    if (outcome.respectPaused) {
+      setSelectedNotice(
+        `Queued "${track.title}" by ${track.artist}. Music is currently paused — tap Play in the top bar whenever you're ready.`
+      );
+    } else if (outcome.startedPlaying) {
+      setSelectedNotice(`Now playing "${track.title}" — ${track.artist}.`);
+    } else {
+      setSelectedNotice(
+        `Selected "${track.title}" — ${track.artist}. Tap Play in the top bar if your browser paused audio.`
+      );
+    }
+  };
+
+  const handleSubmitSuggestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSuggestError(null);
+    setSuggestSuccess(null);
+
+    const cleanTitle = suggestTitle.trim();
+    const cleanArtist = suggestArtist.trim();
+    if (!cleanTitle) {
+      setSuggestError('Please enter a song title before submitting.');
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastSuggestionAt < 4000) {
+      setSuggestError('Please wait a moment before sending another suggestion.');
+      return;
+    }
+
+    const normalizedKey = normalizeSongSuggestionKey(cleanTitle, cleanArtist);
+    const prevSubmitted = readSubmittedSuggestionsSession();
+    if (prevSubmitted.includes(normalizedKey)) {
+      setSuggestSuccess("Thank you! We've added your song suggestion to our list.");
+      setSuggestTitle('');
+      setSuggestArtist('');
+      return;
+    }
+
+    setSuggestSubmitting(true);
+    try {
+      await submitGuestSongSuggestion({
+        title: cleanTitle,
+        artist: cleanArtist
+      });
+      setLastSuggestionAt(Date.now());
+      try {
+        const nextList = [...prevSubmitted.slice(-24), normalizedKey];
+        window.sessionStorage.setItem(
+          SUBMITTED_SUGGESTIONS_SESSION_KEY,
+          JSON.stringify(nextList)
+        );
+      } catch {
+        // Ignore storage error
+      }
+      setSuggestTitle('');
+      setSuggestArtist('');
+      setSuggestSuccess("Thank you! We've added your song suggestion to our list.");
+    } catch (err) {
+      setSuggestError(
+        err instanceof Error
+          ? err.message
+          : 'We could not record your suggestion right now. Please try again.'
+      );
+    } finally {
+      setSuggestSubmitting(false);
+    }
+  };
+
+  const enabledSongs = availableSongs.filter((s) => s.enabled !== false && Boolean(s.fileUrl));
+
   return (
     <section
       id="puzzle"
+      {...sectionTypoProps}
       className="scroll-mt-20 py-16 sm:py-24 px-4 sm:px-6 border-b border-[#07543E]/10 bg-[#FFFDF8]"
     >
       <div className="max-w-3xl mx-auto">
         <div className="text-center max-w-xl mx-auto mb-9 sm:mb-12">
-          <p className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2">
+          <p
+            data-typo="label"
+            className="text-xs sm:text-sm uppercase tracking-[0.22em] text-[#737746] font-semibold mb-2"
+          >
             A LITTLE WEDDING FUN
           </p>
-          <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-4">
+          <h2
+            data-typo="heading"
+            className="font-serif text-[34px] sm:text-5xl font-semibold text-[#07543E] text-balance leading-tight mb-4"
+          >
             Put Our Love Story Together
           </h2>
-          <p className="text-base sm:text-lg text-[#262820]/80 leading-relaxed">
+          <p
+            data-typo="body"
+            className="text-base sm:text-lg text-[#262820]/80 leading-relaxed"
+          >
             Take a moment to play this special part of our celebration. Piece together our photograph and reveal the beautiful picture.
           </p>
           <div className="mt-6 h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent" />
         </div>
 
-        <WeddingPuzzleBoard imageUrl={puzzleImageUrl} coupleNames={coupleNames} />
+        <WeddingPuzzleBoard
+          imageUrl={puzzleImageUrl}
+          coupleNames={coupleNames}
+          onSolved={handlePuzzleSolved}
+        />
+
+        {/* Session-Persisted Musical Reward — Unlocked ONLY after completing the puzzle */}
+        <AnimatePresence>
+          {rewardUnlocked && (
+            <motion.div
+              key="puzzle-music-reward"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="mt-8 rounded-2xl border border-[#C5A04A]/50 bg-[#FAF7F0] p-5 min-[360px]:p-6 sm:p-8 shadow-[0_14px_36px_-14px_rgba(7,59,43,0.16)] space-y-5"
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-[#07543E] text-[#F3E5AB] flex items-center justify-center shrink-0 border border-[#C5A04A]/45">
+                  <Music2 className="w-5 h-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p
+                    data-typo="label"
+                    className="text-xs uppercase tracking-[0.2em] text-[#737746] font-semibold"
+                  >
+                    Puzzle Reward Unlocked
+                  </p>
+                  <h3
+                    data-typo="subheading"
+                    className="font-serif text-xl sm:text-2xl font-semibold text-[#07543E] leading-snug"
+                  >
+                    You did it! 🎉 You&apos;ve unlocked a little musical treat. Choose the next song for our celebration!
+                  </h3>
+                </div>
+              </div>
+
+              {musicEnabled && enabledSongs.length > 0 ? (
+                <div className="space-y-3">
+                  <label
+                    htmlFor="puzzle-song-selector"
+                    data-typo="label"
+                    className="block text-xs font-semibold uppercase tracking-[0.16em] text-[#07543E]"
+                  >
+                    Select the Next Celebration Song
+                  </label>
+
+                  <select
+                    id="puzzle-song-selector"
+                    value={activeSongId}
+                    onChange={(e) => void handleSongSelectChange(e)}
+                    className="w-full px-4 py-3 min-h-[48px] rounded-xl border border-[#07543E]/25 bg-white text-sm sm:text-base font-medium text-[#262820] focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15 cursor-pointer"
+                  >
+                    {!enabledSongs.some((s) => s.id === activeSongId) && (
+                      <option value="">Choose a song from our celebration playlist...</option>
+                    )}
+                    {enabledSongs.map((song) => (
+                      <option key={song.id} value={song.id}>
+                        {song.title} — {song.artist}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedNotice && (
+                    <p
+                      role="status"
+                      data-typo="caption"
+                      className="text-xs sm:text-sm text-[#07543E] bg-[#07543E]/8 border border-[#07543E]/15 rounded-lg px-3.5 py-2.5 flex items-center gap-2"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-[#C5A04A] shrink-0" />
+                      <span>{selectedNotice}</span>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p data-typo="caption" className="text-sm text-[#262820]/75">
+                  {musicEnabled
+                    ? 'Our playlist tracks are being curated by the couple — you can still suggest a favourite song below!'
+                    : 'Background music is currently paused by the couple, but you can still suggest a song below!'}
+                </p>
+              )}
+
+              {/* Discreet Song Suggestion Trigger & Expandable Form */}
+              <div className="pt-3 border-t border-[#07543E]/12">
+                <button
+                  type="button"
+                  data-typo="button"
+                  onClick={() => {
+                    setShowSuggestForm((prev) => !prev);
+                    setSuggestError(null);
+                  }}
+                  aria-expanded={showSuggestForm}
+                  className="inline-flex items-center min-h-[44px] text-xs sm:text-sm font-semibold text-[#07543E] hover:text-[#073B2B] underline underline-offset-4 cursor-pointer"
+                >
+                  Can&apos;t find your song? Suggest one!
+                </button>
+
+                {showSuggestForm && (
+                  <form
+                    onSubmit={(e) => void handleSubmitSuggestion(e)}
+                    noValidate
+                    className="mt-3 p-4 sm:p-5 rounded-xl bg-white border border-[#07543E]/15 space-y-4"
+                  >
+                    {suggestError && (
+                      <div
+                        role="alert"
+                        className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs sm:text-sm text-red-900 flex items-start gap-2"
+                      >
+                        <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                        <span>{suggestError}</span>
+                      </div>
+                    )}
+
+                    {suggestSuccess && (
+                      <div
+                        role="status"
+                        className="p-3 rounded-lg bg-[#07543E]/8 border border-[#07543E]/25 text-xs sm:text-sm text-[#07543E] flex items-start gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-[#07543E] shrink-0 mt-0.5" />
+                        <span>{suggestSuccess}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label
+                          htmlFor="song-suggest-title"
+                          className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
+                        >
+                          Song Title <span className="text-red-700">*</span>
+                        </label>
+                        <input
+                          id="song-suggest-title"
+                          type="text"
+                          required
+                          maxLength={120}
+                          value={suggestTitle}
+                          disabled={suggestSubmitting}
+                          onChange={(e) => setSuggestTitle(e.target.value)}
+                          placeholder="e.g. All of Me"
+                          className="w-full px-3.5 py-2.5 min-h-[44px] text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-[#FAF7F0]/50 focus:outline-none focus:border-[#07543E]"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="song-suggest-artist"
+                          className="block text-xs font-semibold uppercase tracking-wider text-[#07543E] mb-1.5"
+                        >
+                          Artist Name (Optional)
+                        </label>
+                        <input
+                          id="song-suggest-artist"
+                          type="text"
+                          maxLength={120}
+                          value={suggestArtist}
+                          disabled={suggestSubmitting}
+                          onChange={(e) => setSuggestArtist(e.target.value)}
+                          placeholder="e.g. John Legend"
+                          className="w-full px-3.5 py-2.5 min-h-[44px] text-base sm:text-sm rounded-lg border border-[#07543E]/20 bg-[#FAF7F0]/50 focus:outline-none focus:border-[#07543E]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-xs text-[#262820]/65">
+                        Sent privately to Mary &amp; Joseph for review.
+                      </p>
+                      <button
+                        type="submit"
+                        disabled={suggestSubmitting}
+                        className="inline-flex items-center justify-center gap-2 px-5 min-h-[44px] rounded-xl bg-[#07543E] hover:bg-[#073B2B] disabled:opacity-60 text-white text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer"
+                      >
+                        {suggestSubmitting ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Sending...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5 text-[#F3E5AB]" />
+                            <span>Submit Suggestion</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </section>
   );

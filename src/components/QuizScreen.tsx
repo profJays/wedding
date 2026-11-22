@@ -11,6 +11,7 @@ interface QuizScreenProps {
   onNext: () => void;
   onBack: () => void;
   canGoBack: boolean;
+  onSkipChallenge: () => void;
   onReturnToWebsite: () => void;
   canReturnToWebsite?: boolean;
 }
@@ -24,6 +25,7 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
   onNext,
   onBack,
   canGoBack,
+  onSkipChallenge,
   onReturnToWebsite,
   canReturnToWebsite = false
 }) => {
@@ -272,6 +274,18 @@ export const QuizScreen: React.FC<QuizScreenProps> = ({
                 : 'Next Question'}
             </span>
             <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Subtle Skip Challenge option */}
+        <div className="mt-4 pt-3 border-t border-[#07543E]/8 text-center">
+          <button
+            type="button"
+            onClick={onSkipChallenge}
+            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 text-xs sm:text-sm font-medium text-[#262820]/65 hover:text-[#07543E] hover:underline underline-offset-4 transition-colors cursor-pointer"
+          >
+            <span>Skip Challenge &amp; Enter Website</span>
+            <ArrowRight className="w-3.5 h-3.5 opacity-70" />
           </button>
         </div>
       </div>

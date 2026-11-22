@@ -50,6 +50,97 @@ export interface GuestFAQItem {
   answer: string;
 }
 
+export type TypographySectionId =
+  | 'welcome'
+  | 'story'
+  | 'schedule'
+  | 'puzzle'
+  | 'gifting'
+  | 'faq'
+  | 'rsvp'
+  | 'gallery'
+  | 'footer';
+
+export type TypographyElementKey =
+  | 'heading'
+  | 'subheading'
+  | 'body'
+  | 'label'
+  | 'caption'
+  | 'button';
+
+export type AllowedFontFamilyKey =
+  | 'default'
+  | 'cormorant'
+  | 'playfair'
+  | 'lora'
+  | 'jakarta'
+  | 'dm-sans'
+  | 'pinyon';
+
+export type AllowedFontWeight = '400' | '500' | '600' | '700';
+
+export type AllowedTextAlign = 'default' | 'left' | 'center' | 'right';
+
+export interface ElementTypographyStyle {
+  fontFamily?: AllowedFontFamilyKey;
+  fontSizePx?: number;
+  fontWeight?: AllowedFontWeight;
+  bold?: boolean;
+  italic?: boolean;
+  textAlign?: AllowedTextAlign;
+  lineHeight?: number;
+  letterSpacingEm?: number;
+  color?: string;
+}
+
+export type SectionTypographyElements = Partial<
+  Record<TypographyElementKey, ElementTypographyStyle>
+>;
+
+export type SectionTypographyMap = Partial<
+  Record<TypographySectionId, SectionTypographyElements>
+>;
+
+export interface SlideshowSlideItem {
+  id: string;
+  title: string;
+  caption?: string;
+  fileUrl: string;
+  driveFileId?: string;
+  storageProvider: 'google_drive' | 'local_server' | 'site_asset';
+  enabled: boolean;
+  order: number;
+}
+
+export interface MusicTrack {
+  id: string;
+  title: string;
+  artist: string;
+  fileUrl: string;
+  driveFileId: string;
+  fileName: string;
+  storageProvider: 'google_drive' | 'local_server' | 'site_asset';
+  enabled: boolean;
+  isDefault: boolean;
+  order: number;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  updatedByUid: string;
+}
+
+export type SongSuggestionStatus = 'new' | 'reviewed' | 'added' | 'declined';
+
+export interface SongSuggestion {
+  id: string;
+  title: string;
+  artist: string;
+  normalizedKey: string;
+  status: SongSuggestionStatus;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
 export interface SiteContentData {
   coupleNames: string;
   brideName: string;
@@ -87,6 +178,17 @@ export interface SiteContentData {
   musicAudioFileId?: string;
   musicAudioUrl?: string;
   musicAudioFileName?: string;
+  giftingEnabled?: boolean;
+  giftingHeading?: string;
+  giftingIntro?: string;
+  giftingClosing?: string;
+  giftingAccountName?: string;
+  giftingBankName?: string;
+  giftingAccountNumber?: string;
+  sectionTypography?: SectionTypographyMap;
+  slideshowAutoplay?: boolean;
+  slideshowIntervalMs?: number;
+  slideshowItems?: SlideshowSlideItem[];
   updatedAt?: string;
   updatedByUid?: string;
 }
@@ -161,14 +263,39 @@ export type DriveAuthStateLabel =
   | 'Reconnection Required'
   | 'Missing Server Credentials';
 
+export type DriveBrowserSessionStatus = 'connected' | 'disconnected';
+
+export type DriveServerRefreshStatus =
+  | 'connected'
+  | 'expired'
+  | 'invalid'
+  | 'missing'
+  | 'unverified';
+
+export type DriveOverallConnectionStatus =
+  | 'fully_connected'
+  | 'temporary_browser'
+  | 'disconnected';
+
 export interface DriveConnectionStatus {
   configuredFolderId: boolean;
   folderIdPreview: string;
   folderName: string;
   oauthConnected: boolean;
   connectedEmail: string;
+  serverOAuthClientConfigured: boolean;
   serverRefreshConfigured: boolean;
   serverRefreshVerified: boolean | null;
+  serverRefreshTokenSource: 'server_store' | 'env' | 'none';
+  serverRefreshTokenPersistedAt: string | null;
+  browserSessionStatus: DriveBrowserSessionStatus;
+  serverRefreshStatus: DriveServerRefreshStatus;
+  overallConnectionStatus: DriveOverallConnectionStatus;
+  refreshErrorCategory: 'expired_or_revoked' | 'invalid_client' | 'missing' | 'network' | null;
+  oauthCallbackPath: string;
+  oauthRedirectUri: string;
+  oauthRedirectUriSource: 'env_redirect_uri' | 'env_app_url' | 'request_fallback';
+  oauthClientIdMasked: string;
   unattendedUploadsReady: boolean;
   authState: DriveAuthState;
   authStateLabel: DriveAuthStateLabel;
@@ -186,6 +313,8 @@ export interface DriveTestConnectionResponse {
   tokenObtained: boolean;
   folderVerified: boolean;
   authMode: 'server_refresh_token' | 'browser_session' | 'none';
+  serverRefreshStatus: DriveServerRefreshStatus;
+  verifiedEmail?: string;
   message: string;
   driveStatus: DriveConnectionStatus;
 }
@@ -294,5 +423,3 @@ export interface ResumableCompleteResponse {
   item: UploadedFileMetadata;
   isAdminUpload: boolean;
 }
-
-

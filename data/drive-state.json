@@ -1,10 +1,10 @@
 {
-  "oauthConnected": true,
+  "oauthConnected": false,
   "connectedEmail": "joepreserve@gmail.com",
   "folderId": "1Dd_CeAfUy8JBnOmdlcNAX091XnzKZocd",
   "folderName": "mary-joseph",
   "lastUploadAt": "2026-11-15T22:35:56.014Z",
-  "lastError": null,
+  "lastError": "Server Google Drive refresh token has expired or been revoked (Google OAuth apps in Testing mode expire refresh tokens after 7 days). Click \"Reconnect Google Drive\" to obtain a new server refresh token or update GOOGLE_OAUTH_REFRESH_TOKEN.",
   "subfolders": {
     "rootId": "16wtY20qe_6x5MQ9LzIyQSxwCKjAOti_k",
     "websitePhotosId": "1-qVoNe5bVmLqA1xDCjclryTm0mMZc39C",
