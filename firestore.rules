@@ -56,6 +56,26 @@ service cloud.firestore {
         && data.updatedByUid == request.auth.uid;
     }
 
+    // Website Images Manager safe partial update on siteContent/main
+    function isValidWebsiteImagesPartialUpdate(data, prev) {
+      return data.diff(prev).affectedKeys().hasOnly([
+          'sectionImages',
+          'heroImageUrl',
+          'puzzleImageUrl',
+          'puzzleImageFileId',
+          'updatedAt',
+          'updatedByUid'
+        ])
+        && (!('sectionImages' in data) || (data.sectionImages is map && data.sectionImages.size() <= 10))
+        && (!('heroImageUrl' in data) || (data.heroImageUrl is string && data.heroImageUrl.size() >= 1 && data.heroImageUrl.size() <= 500))
+        && (!('puzzleImageUrl' in data) || (data.puzzleImageUrl is string && data.puzzleImageUrl.size() <= 500))
+        && (!('puzzleImageFileId' in data) || (data.puzzleImageFileId is string && data.puzzleImageFileId.size() <= 200))
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time
+        && data.updatedByUid is string
+        && data.updatedByUid == request.auth.uid;
+    }
+
     // Full SiteContent validation (engineered to stay safely under Firestore's 1,000-expression ceiling)
     function isValidSiteContentCore(data) {
       return data.coupleNames is string && data.coupleNames.size() >= 2 && data.coupleNames.size() <= 100
@@ -105,6 +125,7 @@ service cloud.firestore {
         && data.giftingBankName is string && data.giftingBankName.size() <= 120
         && data.giftingAccountNumber is string && data.giftingAccountNumber.size() <= 60
         && data.sectionTypography is map && data.sectionTypography.size() <= 12
+        && data.sectionImages is map && data.sectionImages.size() <= 10
         && data.slideshowAutoplay is bool
         && data.slideshowIntervalMs is int && data.slideshowIntervalMs >= 2000 && data.slideshowIntervalMs <= 30000
         && data.slideshowItems is list && data.slideshowItems.size() <= 30 && (data.slideshowItems.size() == 0 || data.slideshowItems[0] is map)
@@ -113,7 +134,7 @@ service cloud.firestore {
     }
 
     function isValidSiteContent(data) {
-      return data.keys().size() == 49
+      return data.keys().size() == 50
         && data.keys().hasOnly([
           'coupleNames',
           'brideName',
@@ -159,6 +180,7 @@ service cloud.firestore {
           'giftingBankName',
           'giftingAccountNumber',
           'sectionTypography',
+          'sectionImages',
           'slideshowAutoplay',
           'slideshowIntervalMs',
           'slideshowItems',
@@ -338,7 +360,7 @@ service cloud.firestore {
         && data.addedBy is string && data.addedBy == request.auth.uid;
     }
 
-    // 1. Site Content & Settings (Public read for wedding site; strictly admin-only writes with safe partial slideshow updates)
+    // 1. Site Content & Settings (Public read for wedding site; strictly admin-only writes with safe partial updates)
     match /siteContent/{contentId} {
       allow get: if isValidId(contentId);
       allow list: if isAdmin();
@@ -352,6 +374,7 @@ service cloud.firestore {
         && isAdmin()
         && (
           isValidSlideshowPartialUpdate(incoming(), existing())
+          || isValidWebsiteImagesPartialUpdate(incoming(), existing())
           || (
             isValidSiteContent(incoming())
             && incoming().updatedAt == request.time

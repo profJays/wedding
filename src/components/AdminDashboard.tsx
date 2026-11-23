@@ -40,6 +40,7 @@ import { AdminMusicLibraryPanel } from './admin/AdminMusicLibraryPanel';
 import { AdminGiftingPanel } from './admin/AdminGiftingPanel';
 import { AdminTypographyPanel } from './admin/AdminTypographyPanel';
 import { AdminSlideshowPanel } from './admin/AdminSlideshowPanel';
+import { AdminWebsiteImagesPanel } from './admin/AdminWebsiteImagesPanel';
 import { User } from 'firebase/auth';
 import {
   signInAdminWithGoogle,
@@ -55,6 +56,7 @@ import {
 import {
   saveSiteContent,
   saveSlideshowSettings,
+  saveWebsiteImagesSettings,
   listAllRsvps,
   updateRsvpRecord,
   deleteRsvpRecord,
@@ -92,7 +94,8 @@ import {
   GuestFAQItem,
   MusicTrack,
   SongSuggestion,
-  SlideshowSlideItem
+  SlideshowSlideItem,
+  SectionImagesMap
 } from '../types';
 import {
   FILE_INPUT_ACCEPT,
@@ -117,6 +120,7 @@ interface AdminDashboardProps {
 type AdminTab =
   | 'overview'
   | 'content'
+  | 'images'
   | 'music'
   | 'gifting'
   | 'typography'
@@ -703,6 +707,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleSaveWebsiteImagesSettings = async (input: {
+    sectionImages: SectionImagesMap;
+    fallbackHeroImageUrl?: string;
+    fallbackPuzzleImageUrl?: string;
+    fallbackPuzzleImageFileId?: string;
+  }): Promise<boolean> => {
+    setSavingContent(true);
+    setBannerMessage(null);
+    try {
+      await saveWebsiteImagesSettings(input);
+      setBannerMessage({
+        type: 'success',
+        text: 'Website images saved and published live.'
+      });
+      return true;
+    } catch (err) {
+      setBannerMessage({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Could not save website images.'
+      });
+      return false;
+    } finally {
+      setSavingContent(false);
+    }
+  };
+
   const handleUploadPuzzleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (puzzleFileInputRef.current) puzzleFileInputRef.current.value = '';
@@ -746,7 +779,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setDraftContent((d) => ({
           ...d,
           puzzleImageFileId: created.driveFileId,
-          puzzleImageUrl: created.fileUrl
+          puzzleImageUrl: created.fileUrl,
+          sectionImages: d.sectionImages?.puzzle
+            ? {
+                ...d.sectionImages,
+                puzzle: {
+                  ...d.sectionImages.puzzle,
+                  fileUrl: created.fileUrl,
+                  driveFileId: created.driveFileId,
+                  storageProvider:
+                    created.storageProvider === 'local_server'
+                      ? 'local_server'
+                      : 'google_drive'
+                }
+              }
+            : d.sectionImages
         }));
         await loadAllAdminData();
         setBannerMessage({
@@ -1159,6 +1206,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {[
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           { id: 'content', label: 'Website Content', icon: FileEdit },
+          { id: 'images', label: 'Website Images', icon: ImageIcon },
           {
             id: 'music',
             label: `Music (${musicTracks.length}${
@@ -2162,6 +2210,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* ====================================================================
+          TAB 2B: WEBSITE IMAGES MANAGER
+      ==================================================================== */}
+      {activeTab === 'images' && (
+        <AdminWebsiteImagesPanel
+          siteContent={siteContent}
+          draftContent={draftContent}
+          setDraftContent={setDraftContent}
+          galleryItems={galleryItems}
+          coupleNames={siteContent.coupleNames}
+          maxImageBytes={adminLimits.maxImageBytes}
+          savingContent={savingContent}
+          onSaveWebsiteImages={handleSaveWebsiteImagesSettings}
+          onRefreshData={loadAllAdminData}
+          onNotify={(type, text) => setBannerMessage({ type, text })}
+          onNeedsDriveReconnect={() => setAdminNeedsDriveReconnect(true)}
+        />
+      )}
+
+      {/* ====================================================================
           TAB 3: RSVP MANAGEMENT
       ==================================================================== */}
       {activeTab === 'rsvps' && (
@@ -3069,13 +3136,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     id="puzzle-image-url-input"
                     type="text"
                     value={draftContent.puzzleImageUrl || ''}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const nextUrl = e.target.value;
                       setDraftContent((d) => ({
                         ...d,
-                        puzzleImageUrl: e.target.value,
-                        puzzleImageFileId: ''
-                      }))
-                    }
+                        puzzleImageUrl: nextUrl,
+                        puzzleImageFileId: '',
+                        sectionImages: d.sectionImages?.puzzle
+                          ? {
+                              ...d.sectionImages,
+                              puzzle: {
+                                ...d.sectionImages.puzzle,
+                                fileUrl: nextUrl,
+                                driveFileId: '',
+                                storageProvider: nextUrl.includes('/api/gallery/drive/')
+                                  ? 'google_drive'
+                                  : 'site_asset'
+                              }
+                            }
+                          : d.sectionImages
+                      }));
+                    }}
                     placeholder={WEDDING_PHOTOS.story.src}
                     className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-lg border border-[#07543E]/20 bg-white"
                   />
@@ -3193,7 +3274,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               setDraftContent((d) => ({
                                 ...d,
                                 puzzleImageUrl: photo.url,
-                                puzzleImageFileId: photo.fileId
+                                puzzleImageFileId: photo.fileId,
+                                sectionImages: d.sectionImages?.puzzle
+                                  ? {
+                                      ...d.sectionImages,
+                                      puzzle: {
+                                        ...d.sectionImages.puzzle,
+                                        fileUrl: photo.url,
+                                        driveFileId: photo.fileId,
+                                        storageProvider:
+                                          photo.fileId || photo.url.includes('/api/gallery/drive/')
+                                            ? 'google_drive'
+                                            : 'site_asset'
+                                      }
+                                    }
+                                  : d.sectionImages
                               }));
                               setShowPuzzlePicker(false);
                             }}
@@ -3408,9 +3503,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <input
                   type="text"
                   value={draftContent.heroImageUrl}
-                  onChange={(e) =>
-                    setDraftContent((d) => ({ ...d, heroImageUrl: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const nextUrl = e.target.value;
+                    setDraftContent((d) => ({
+                      ...d,
+                      heroImageUrl: nextUrl,
+                      sectionImages: d.sectionImages?.hero
+                        ? {
+                            ...d.sectionImages,
+                            hero: {
+                              ...d.sectionImages.hero,
+                              fileUrl: nextUrl,
+                              driveFileId: '',
+                              storageProvider: nextUrl.includes('/api/gallery/drive/')
+                                ? 'google_drive'
+                                : 'site_asset'
+                            }
+                          }
+                        : d.sectionImages
+                    }));
+                  }}
                   className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[#07543E]/20 bg-white"
                 />
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -3424,7 +3536,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       key={preset.url}
                       type="button"
                       onClick={() =>
-                        setDraftContent((d) => ({ ...d, heroImageUrl: preset.url }))
+                        setDraftContent((d) => ({
+                          ...d,
+                          heroImageUrl: preset.url,
+                          sectionImages: d.sectionImages?.hero
+                            ? {
+                                ...d.sectionImages,
+                                hero: {
+                                  ...d.sectionImages.hero,
+                                  fileUrl: preset.url,
+                                  driveFileId: '',
+                                  storageProvider: 'site_asset'
+                                }
+                              }
+                            : d.sectionImages
+                        }))
                       }
                       className="text-[11px] px-2.5 py-1 rounded border border-[#07543E]/20 bg-white hover:bg-[#FAF7F0] text-[#07543E] cursor-pointer"
                     >

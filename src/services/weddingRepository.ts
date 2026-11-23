@@ -23,7 +23,12 @@ import { DEFAULT_SITE_CONTENT } from '../data/weddingSite';
 import { getDriveAccessToken, clearExpiredDriveToken } from './driveOAuth';
 import { sanitizeSectionTypographyMap } from '../utils/typography';
 import {
+  isValidSavedImageUrl,
+  sanitizeSectionImagesMap
+} from '../utils/websiteImages';
+import {
   SiteContentData,
+  SectionImagesMap,
   RsvpRecord,
   GalleryItem,
   AdminUser,
@@ -160,6 +165,7 @@ export function subscribeSiteContent(
             ? raw.giftingAccountNumber
             : DEFAULT_SITE_CONTENT.giftingAccountNumber,
         sectionTypography: sanitizeSectionTypographyMap(raw.sectionTypography),
+        sectionImages: sanitizeSectionImagesMap(raw.sectionImages),
         slideshowAutoplay:
           typeof raw.slideshowAutoplay === 'boolean'
             ? raw.slideshowAutoplay
@@ -301,6 +307,82 @@ export async function saveSlideshowSettings(settings: {
   }
 }
 
+export async function saveWebsiteImagesSettings(input: {
+  sectionImages: SectionImagesMap;
+  fallbackHeroImageUrl?: string;
+  fallbackPuzzleImageUrl?: string;
+  fallbackPuzzleImageFileId?: string;
+}): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('Administrator authentication is required.');
+  }
+
+  const rawMap =
+    input.sectionImages && typeof input.sectionImages === 'object'
+      ? input.sectionImages
+      : {};
+
+  for (const [, slot] of Object.entries(rawMap)) {
+    if (!slot) continue;
+    if (!isValidSavedImageUrl(slot.fileUrl)) {
+      throw new Error(
+        'One or more selected section images do not have a valid saved image URL yet. Please wait for uploads to finish before saving.'
+      );
+    }
+  }
+
+  const sanitized = sanitizeSectionImagesMap(rawMap);
+
+  const heroImageUrl = (
+    sanitized.hero?.fileUrl ||
+    (isValidSavedImageUrl(input.fallbackHeroImageUrl)
+      ? input.fallbackHeroImageUrl.trim()
+      : DEFAULT_SITE_CONTENT.heroImageUrl)
+  ).slice(0, 500);
+
+  const puzzleImageUrl = (
+    sanitized.puzzle?.fileUrl ||
+    (isValidSavedImageUrl(input.fallbackPuzzleImageUrl)
+      ? input.fallbackPuzzleImageUrl.trim()
+      : DEFAULT_SITE_CONTENT.puzzleImageUrl || '')
+  ).slice(0, 500);
+
+  const puzzleImageFileId = (
+    sanitized.puzzle
+      ? sanitized.puzzle.driveFileId || ''
+      : input.fallbackPuzzleImageFileId || ''
+  )
+    .trim()
+    .slice(0, 200);
+
+  const siteContentRef = doc(db, 'siteContent', 'main');
+  try {
+    const existingSnap = await getDoc(siteContentRef);
+    if (!existingSnap.exists()) {
+      await saveSiteContent({
+        ...DEFAULT_SITE_CONTENT,
+        sectionImages: sanitized,
+        heroImageUrl,
+        puzzleImageUrl,
+        puzzleImageFileId
+      });
+      return;
+    }
+
+    await updateDoc(siteContentRef, {
+      sectionImages: sanitized,
+      heroImageUrl,
+      puzzleImageUrl,
+      puzzleImageFileId,
+      updatedAt: serverTimestamp(),
+      updatedByUid: uid
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, SITE_CONTENT_DOC_PATH);
+  }
+}
+
 export async function saveSiteContent(content: SiteContentData): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (!uid) {
@@ -398,6 +480,7 @@ export async function saveSiteContent(content: SiteContentData): Promise<void> {
       '8065013009'
     ).slice(0, 60),
     sectionTypography: sanitizeSectionTypographyMap(content.sectionTypography),
+    sectionImages: sanitizeSectionImagesMap(content.sectionImages),
     slideshowAutoplay: content.slideshowAutoplay !== false,
     slideshowIntervalMs: Math.max(
       2000,

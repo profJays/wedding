@@ -141,6 +141,27 @@ export interface SongSuggestion {
   updatedAt: Date | null;
 }
 
+export type WebsiteImageSlotId = 'hero' | 'story' | 'schedule' | 'puzzle' | 'qa';
+
+export type ImageFitMode = 'cover' | 'contain';
+
+export type ImageFocalPosition = 'center' | 'top' | 'bottom' | 'left' | 'right';
+
+export type HeroOverlayIntensity = 'light' | 'medium' | 'strong';
+
+export interface WebsiteImageSlotConfig {
+  fileUrl: string;
+  driveFileId?: string;
+  storageProvider: 'google_drive' | 'local_server' | 'site_asset';
+  fitMode: ImageFitMode;
+  focalPosition: ImageFocalPosition;
+  overlayIntensity?: HeroOverlayIntensity;
+  altText?: string;
+  hidden?: boolean;
+}
+
+export type SectionImagesMap = Partial<Record<WebsiteImageSlotId, WebsiteImageSlotConfig>>;
+
 export interface SiteContentData {
   coupleNames: string;
   brideName: string;
@@ -186,6 +207,7 @@ export interface SiteContentData {
   giftingBankName?: string;
   giftingAccountNumber?: string;
   sectionTypography?: SectionTypographyMap;
+  sectionImages?: SectionImagesMap;
   slideshowAutoplay?: boolean;
   slideshowIntervalMs?: number;
   slideshowItems?: SlideshowSlideItem[];

@@ -25,6 +25,12 @@ import { WeddingPhotoPuzzleSection } from './WeddingPhotoPuzzleSection';
 import { GiftingSection } from './GiftingSection';
 import { getSectionTypographyProps } from '../utils/typography';
 import {
+  getHeroOverlayGradient,
+  getImageFitClass,
+  getImageObjectPositionClass,
+  resolveWebsiteImageSlot
+} from '../utils/websiteImages';
+import {
   buildMapSearchUrl,
   buildDirectionsUrl,
   buildGoogleCalendarUrl,
@@ -86,6 +92,10 @@ const EditorialPhoto: React.FC<EditorialPhotoProps> = ({
 }) => {
   const [hasError, setHasError] = useState(false);
 
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
   return (
     <div
       className={`relative overflow-hidden rounded-xl border border-[#C5A04A]/25 bg-[#F2EBDD] ${className}`}
@@ -126,6 +136,12 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
   const storyTypoProps = getSectionTypographyProps('story', siteContent.sectionTypography?.story);
   const scheduleTypoProps = getSectionTypographyProps('schedule', siteContent.sectionTypography?.schedule);
   const faqTypoProps = getSectionTypographyProps('faq', siteContent.sectionTypography?.faq);
+
+  const heroImage = resolveWebsiteImageSlot(siteContent, 'hero');
+  const storyImage = resolveWebsiteImageSlot(siteContent, 'story');
+  const scheduleImage = resolveWebsiteImageSlot(siteContent, 'schedule');
+  const puzzleImage = resolveWebsiteImageSlot(siteContent, 'puzzle');
+  const qaImage = resolveWebsiteImageSlot(siteContent, 'qa');
 
   const [countdown, setCountdown] = useState<CountdownTime>(() =>
     getCountdown(siteContent.ceremonyTargetISO)
@@ -224,18 +240,17 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       <section className="relative w-full min-h-[78vh] sm:min-h-[84vh] flex items-end overflow-hidden bg-[#073B2B]">
         <img
-          src={siteContent.heroImageUrl || WEDDING_PHOTOS.hero.src}
-          alt={WEDDING_PHOTOS.hero.alt}
+          src={heroImage.fileUrl}
+          alt={heroImage.altText || WEDDING_PHOTOS.hero.alt}
           referrerPolicy="no-referrer"
-          className="absolute inset-0 w-full h-full object-cover object-[50%_20%]"
+          className={`absolute inset-0 w-full h-full ${getImageFitClass(heroImage.fitMode)} ${getImageObjectPositionClass(heroImage.focalPosition, 'hero')}`}
         />
 
         {/* Editorial Contrast Scrim (#073B2B forest green gradient) */}
         <div
           className="absolute inset-0"
           style={{
-            background:
-              'linear-gradient(to top, rgba(7, 59, 43, 0.94) 0%, rgba(7, 59, 43, 0.58) 46%, rgba(7, 59, 43, 0.24) 100%)'
+            background: getHeroOverlayGradient(heroImage.overlayIntensity)
           }}
         />
 
@@ -405,17 +420,8 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           </div>
 
           {/* Story Spread: Natural Photo Presentation + Comfortable Reading Width */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start mb-16 sm:mb-20">
-            <div className="lg:col-span-5">
-              <EditorialPhoto
-                src={WEDDING_PHOTOS.story.src}
-                alt={WEDDING_PHOTOS.story.alt}
-                coupleNames={siteContent.coupleNames}
-                imgClassName="w-full h-80 sm:h-96 lg:h-[480px] object-cover object-[50%_20%]"
-              />
-            </div>
-
-            <div className="lg:col-span-7">
+          {storyImage.hidden ? (
+            <div className="max-w-3xl mb-16 sm:mb-20">
               <div className="p-5 min-[360px]:p-6 sm:p-10 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 space-y-6">
                 <div className="space-y-5 text-base sm:text-lg leading-[1.75] sm:leading-loose text-[#262820]/85 font-serif max-w-prose">
                   {siteContent.storyParagraphs.map((para, idx) => (
@@ -434,7 +440,38 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start mb-16 sm:mb-20">
+              <div className="lg:col-span-5">
+                <EditorialPhoto
+                  src={storyImage.fileUrl}
+                  alt={storyImage.altText || WEDDING_PHOTOS.story.alt}
+                  coupleNames={siteContent.coupleNames}
+                  imgClassName={`w-full h-80 sm:h-96 lg:h-[480px] ${getImageFitClass(storyImage.fitMode)} ${getImageObjectPositionClass(storyImage.focalPosition, 'story')}`}
+                />
+              </div>
+
+              <div className="lg:col-span-7">
+                <div className="p-5 min-[360px]:p-6 sm:p-10 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 space-y-6">
+                  <div className="space-y-5 text-base sm:text-lg leading-[1.75] sm:leading-loose text-[#262820]/85 font-serif max-w-prose">
+                    {siteContent.storyParagraphs.map((para, idx) => (
+                      <p
+                        key={idx}
+                        data-typo="body"
+                        className={
+                          idx === 0
+                            ? 'first-letter:text-5xl first-letter:font-serif first-letter:font-semibold first-letter:text-[#07543E] first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:leading-none'
+                            : ''
+                        }
+                      >
+                        {para}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Couple Q&As (Refined Editorial Interactive Accordion Spread — Distinct from Guest Q&A) */}
           {siteContent.coupleQas.length > 0 && (
@@ -587,14 +624,16 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           </div>
 
           {/* Venue Editorial Photo (Natural framing, no artificial "Fig." caption) */}
-          <div className="mb-12">
-            <EditorialPhoto
-              src={WEDDING_PHOTOS.schedule.src}
-              alt={WEDDING_PHOTOS.schedule.alt}
-              coupleNames={siteContent.coupleNames}
-              imgClassName="w-full h-64 sm:h-80 lg:h-[380px] object-cover object-[50%_26%]"
-            />
-          </div>
+          {!scheduleImage.hidden && (
+            <div className="mb-12">
+              <EditorialPhoto
+                src={scheduleImage.fileUrl}
+                alt={scheduleImage.altText || WEDDING_PHOTOS.schedule.alt}
+                coupleNames={siteContent.coupleNames}
+                imgClassName={`w-full h-64 sm:h-80 lg:h-[380px] ${getImageFitClass(scheduleImage.fitMode)} ${getImageObjectPositionClass(scheduleImage.focalPosition, 'schedule')}`}
+              />
+            </div>
+          )}
 
           {/* Chronological Day Groups */}
           <div className="space-y-12" ref={calendarContainerRef}>
@@ -752,7 +791,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       ==================================================================== */}
       {siteContent.puzzleEnabled !== false && (
         <WeddingPhotoPuzzleSection
-          puzzleImageUrl={siteContent.puzzleImageUrl}
+          puzzleImageUrl={puzzleImage.fileUrl}
           coupleNames={siteContent.coupleNames}
           musicEnabled={siteContent.musicEnabled !== false}
           availableSongs={availableSongs}
@@ -811,12 +850,14 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                 {AUTHORITATIVE_QA_INTRO}
               </p>
 
-              <EditorialPhoto
-                src={WEDDING_PHOTOS.qa.src}
-                alt={WEDDING_PHOTOS.qa.alt}
-                coupleNames={siteContent.coupleNames}
-                imgClassName="w-full h-80 sm:h-96 lg:h-[440px] object-cover object-[50%_20%]"
-              />
+              {!qaImage.hidden && (
+                <EditorialPhoto
+                  src={qaImage.fileUrl}
+                  alt={qaImage.altText || WEDDING_PHOTOS.qa.alt}
+                  coupleNames={siteContent.coupleNames}
+                  imgClassName={`w-full h-80 sm:h-96 lg:h-[440px] ${getImageFitClass(qaImage.fitMode)} ${getImageObjectPositionClass(qaImage.focalPosition, 'qa')}`}
+                />
+              )}
             </div>
 
             {/* Right Column: Accessible Accordion with Search */}

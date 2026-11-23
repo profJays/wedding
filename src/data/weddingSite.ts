@@ -205,6 +205,7 @@ export const DEFAULT_SITE_CONTENT: SiteContentData = {
   giftingBankName: 'Opay',
   giftingAccountNumber: '8065013009',
   sectionTypography: {},
+  sectionImages: {},
   slideshowAutoplay: true,
   slideshowIntervalMs: 5000,
   slideshowItems: [

@@ -49,6 +49,7 @@
         "giftingBankName": { "type": "string", "maxLength": 120 },
         "giftingAccountNumber": { "type": "string", "maxLength": 60 },
         "sectionTypography": { "type": "object" },
+        "sectionImages": { "type": "object" },
         "slideshowAutoplay": { "type": "boolean" },
         "slideshowIntervalMs": { "type": "integer" },
         "slideshowItems": { "type": "array" },
