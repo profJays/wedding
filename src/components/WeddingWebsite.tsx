@@ -26,6 +26,7 @@ import { GiftingSection } from './GiftingSection';
 import { getSectionTypographyProps } from '../utils/typography';
 import {
   getHeroOverlayGradient,
+  getHeroResponsiveObjectPositionClass,
   getImageFitClass,
   getImageObjectPositionClass,
   resolveWebsiteImageSlot
@@ -236,105 +237,146 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
   return (
     <div id="top" className="w-full bg-[#FAF7F0] text-[#262820]">
       {/* ====================================================================
-          1. HERO SECTION (Editorial Full-Bleed Portrait & Deep Forest Scrim)
+          1. HERO SECTION (Face-Protected Editorial Portrait & Lower Scrim)
+          - Mobile & Tablet (< lg): Clean unobstructed couple photograph above
+            a seamless emerald editorial band so faces are never covered.
+          - Desktop (lg+): Full-bleed portrait with a light, bottom-concentrated
+            emerald gradient and compact lower horizontal editorial strip leaving
+            the upper portrait zone completely clear.
       ==================================================================== */}
-      <section className="relative w-full min-h-[78vh] sm:min-h-[84vh] flex items-end overflow-hidden bg-[#073B2B]">
-        <img
-          src={heroImage.fileUrl}
-          alt={heroImage.altText || WEDDING_PHOTOS.hero.alt}
-          referrerPolicy="no-referrer"
-          className={`absolute inset-0 w-full h-full ${getImageFitClass(heroImage.fitMode)} ${getImageObjectPositionClass(heroImage.focalPosition, 'hero')}`}
-        />
+      <section className="relative w-full overflow-hidden bg-[#073B2B] lg:min-h-[max(600px,min(84vh,780px))] xl:min-h-[max(620px,min(86vh,860px))] lg:flex lg:flex-col lg:justify-end">
+        {/* Photograph Stage: standalone unobstructed portrait frame on mobile & tablet, full-bleed backdrop on lg+ */}
+        <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] md:aspect-[16/9] lg:aspect-auto lg:absolute lg:inset-0 overflow-hidden bg-[#073B2B]">
+          <img
+            src={heroImage.fileUrl}
+            alt={heroImage.altText || WEDDING_PHOTOS.hero.alt}
+            referrerPolicy="no-referrer"
+            className={`w-full h-full ${getImageFitClass(heroImage.fitMode)} ${getHeroResponsiveObjectPositionClass(heroImage.focalPosition)}`}
+          />
 
-        {/* Editorial Contrast Scrim (#073B2B forest green gradient) */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: getHeroOverlayGradient(heroImage.overlayIntensity)
-          }}
-        />
+          {/* Mobile & Tablet: subtle bottom-edge transition only (top ~73% completely clear & natural) */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 bottom-0 h-20 sm:h-24 lg:hidden pointer-events-none"
+            style={{
+              background:
+                'linear-gradient(to top, #073B2B 0%, rgba(7, 59, 43, 0.56) 42%, rgba(7, 59, 43, 0) 100%)'
+            }}
+          />
 
-        <div className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-8 pt-24 pb-12 sm:pb-16 text-center text-[#FAF7F0]">
-          <p className="font-sans text-xs sm:text-sm tracking-[0.18em] sm:tracking-[0.24em] uppercase text-[#F3E5AB] mb-3 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1">
-            <span>{siteContent.weddingDateDisplay}</span>
-            <span className="text-[#C5A04A]" aria-hidden="true">·</span>
-            <span>Abuja, Nigeria</span>
-            <span className="text-[#C5A04A]" aria-hidden="true">·</span>
-            <span className="lowercase font-mono tracking-widest">{siteContent.hashtag}</span>
-          </p>
+          {/* Desktop: gentle emerald gradient concentrated strictly in the lower editorial area */}
+          <div
+            aria-hidden="true"
+            className="hidden lg:block absolute inset-0 pointer-events-none"
+            style={{
+              background: getHeroOverlayGradient(heroImage.overlayIntensity)
+            }}
+          />
+        </div>
 
-          <h1 className="font-serif text-[42px] min-[375px]:text-5xl sm:text-7xl lg:text-8xl font-semibold tracking-wide text-white leading-[1.05] text-balance mb-4">
-            {siteContent.brideName}{' '}
-            <span className="font-script text-[#E8CA6B] font-normal text-[44px] min-[375px]:text-5xl sm:text-7xl lg:text-8xl">
-              &amp;
-            </span>{' '}
-            {siteContent.groomName}
-          </h1>
+        {/* Unobstructed upper portrait breathing space on lg+ so content stays anchored to the bottom */}
+        <div aria-hidden="true" className="hidden lg:block lg:min-h-[52vh] xl:min-h-[55vh] shrink-0" />
 
-          <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/90 max-w-2xl mx-auto mb-8 break-words">
-            {siteContent.mainVenue}
-          </p>
-
-          {/* Hero Ceremony Countdown (Targets 12 Dec 2026 10:00 AM Africa/Lagos) */}
-          {countdown.isPast ? (
-            <div className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#073B2B]/80 border border-[#C5A04A]/50 text-[#F3E5AB] font-serif italic text-lg sm:text-xl mb-8">
-              <Sparkles className="w-4 h-4 text-[#C5A04A]" />
-              <span>Today we celebrate {siteContent.coupleNames} forever!</span>
-            </div>
-          ) : (
+        {/* Editorial Content Band */}
+        <div className="relative z-10 w-full bg-[#073B2B] lg:bg-transparent">
+          <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 md:px-8 pt-3 pb-8 sm:pt-4 sm:pb-10 md:pt-5 md:pb-11 lg:pt-6 lg:pb-8 xl:pb-10 text-center lg:text-left text-[#FAF7F0]">
+            {/* Delicate editorial gold rule on mobile & tablet */}
             <div
-              aria-label="Countdown to the wedding ceremony"
-              className="grid grid-cols-4 gap-2 sm:gap-7 px-3.5 sm:px-7 py-4 rounded-xl bg-[#073B2B]/75 backdrop-blur-md border border-[#C5A04A]/40 mb-8 w-full max-w-md mx-auto"
-            >
-              {[
-                { label: 'Days', value: countdown.days },
-                { label: 'Hours', value: countdown.hours },
-                { label: 'Minutes', value: countdown.minutes },
-                { label: 'Seconds', value: countdown.seconds }
-              ].map((unit) => (
-                <div key={unit.label} className="text-center min-w-0">
-                  <div className="font-serif text-2xl sm:text-3xl font-semibold text-[#F3E5AB] tabular-nums leading-none">
-                    {String(unit.value).padStart(2, '0')}
+              aria-hidden="true"
+              className="lg:hidden h-[1px] w-16 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A]/70 to-transparent mb-4"
+            />
+
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 sm:gap-6 lg:gap-6 xl:gap-10">
+              {/* Identity Block: Date · Location · Hashtag, Couple Names & Venue */}
+              <div className="min-w-0 lg:max-w-[46%] xl:max-w-[50%]">
+                <p className="font-sans text-[11px] sm:text-xs tracking-[0.15em] sm:tracking-[0.22em] uppercase text-[#F3E5AB] mb-2 sm:mb-2.5 flex flex-wrap items-center justify-center lg:justify-start gap-x-2 gap-y-1 [text-shadow:0_1px_10px_rgba(4,28,20,0.45)]">
+                  <span>{siteContent.weddingDateDisplay}</span>
+                  <span className="text-[#C5A04A]" aria-hidden="true">·</span>
+                  <span>Abuja, Nigeria</span>
+                  <span className="text-[#C5A04A]" aria-hidden="true">·</span>
+                  <span className="lowercase font-mono tracking-widest">{siteContent.hashtag}</span>
+                </p>
+
+                <h1 className="font-serif text-[38px] min-[375px]:text-[44px] sm:text-5xl md:text-[54px] lg:text-[52px] xl:text-[64px] font-semibold tracking-wide text-white leading-[1.06] text-balance mb-2 sm:mb-2.5 [text-shadow:0_2px_18px_rgba(4,28,20,0.5)]">
+                  {siteContent.brideName}{' '}
+                  <span className="font-script text-[#E8CA6B] font-normal text-[42px] min-[375px]:text-[48px] sm:text-[54px] md:text-[60px] lg:text-[58px] xl:text-[70px]">
+                    &amp;
+                  </span>{' '}
+                  {siteContent.groomName}
+                </h1>
+
+                <p className="font-serif italic text-[15px] sm:text-base md:text-lg text-[#FAF7F0]/92 max-w-xl mx-auto lg:mx-0 break-words leading-snug [text-shadow:0_1px_12px_rgba(4,28,20,0.45)]">
+                  {siteContent.mainVenue}
+                </p>
+              </div>
+
+              {/* Ceremony Countdown & Action Controls */}
+              <div className="w-full max-w-md mx-auto lg:mx-0 lg:w-auto lg:max-w-none flex flex-col items-center lg:items-end gap-3.5 sm:gap-4 shrink-0">
+                {/* Hero Ceremony Countdown (Targets 12 Dec 2026 10:00 AM Africa/Lagos) */}
+                {countdown.isPast ? (
+                  <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#073B2B]/75 backdrop-blur-md border border-[#C5A04A]/45 text-[#F3E5AB] font-serif italic text-base sm:text-lg">
+                    <Sparkles className="w-4 h-4 text-[#C5A04A] shrink-0" />
+                    <span>Today we celebrate {siteContent.coupleNames} forever!</span>
                   </div>
-                  <div className="mt-1.5 text-[11px] sm:text-xs uppercase tracking-[0.08em] sm:tracking-[0.16em] text-[#FAF7F0]/85 truncate">
-                    {unit.label}
+                ) : (
+                  <div
+                    aria-label="Countdown to the wedding ceremony"
+                    className="grid grid-cols-4 gap-1.5 sm:gap-5 px-3 sm:px-6 py-3 rounded-xl bg-[#073B2B]/72 backdrop-blur-md border border-[#C5A04A]/38 w-full lg:w-auto lg:min-w-[336px]"
+                  >
+                    {[
+                      { label: 'Days', value: countdown.days },
+                      { label: 'Hours', value: countdown.hours },
+                      { label: 'Minutes', value: countdown.minutes },
+                      { label: 'Seconds', value: countdown.seconds }
+                    ].map((unit) => (
+                      <div key={unit.label} className="text-center min-w-0">
+                        <div className="font-serif text-xl sm:text-2xl font-semibold text-[#F3E5AB] tabular-nums leading-none">
+                          {String(unit.value).padStart(2, '0')}
+                        </div>
+                        <div className="mt-1 text-[10px] sm:text-[11px] uppercase tracking-[0.06em] sm:tracking-[0.14em] text-[#FAF7F0]/85 truncate">
+                          {unit.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Hero Action Controls */}
+                <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-end gap-2.5 sm:gap-2.5 xl:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => scrollToSection('rsvp')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 xl:px-6 py-2.5 min-h-[44px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-[13px] font-bold uppercase tracking-[0.15em] transition-colors shadow-md cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <span>RSVP Now</span>
+                  </button>
+
+                  <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-2.5 xl:gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={onGoChallenge}
+                      className="flex-1 sm:flex-initial min-w-0 max-w-full sm:max-w-[235px] inline-flex items-center justify-center gap-1.5 px-4 xl:px-5 py-2.5 min-h-[44px] rounded-xl bg-[#07543E]/85 hover:bg-[#07543E] text-white border border-[#C5A04A]/50 text-xs sm:text-[13px] font-semibold uppercase tracking-[0.11em] backdrop-blur-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-[#F3E5AB] shrink-0" />
+                      <span className="truncate">
+                        {isChallengePassed
+                          ? `View Pass (${guestName.trim() || 'Cleared'})`
+                          : `${siteContent.hashtag} Challenge`}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onGoInvitation}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] text-xs sm:text-[13px] font-medium tracking-[0.1em] uppercase text-[#F3E5AB] hover:text-white underline underline-offset-8 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <MailOpen className="w-3.5 h-3.5 shrink-0" />
+                      <span>Digital Invite</span>
+                    </button>
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
-          )}
-
-          {/* Hero Action Controls */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4 w-full max-w-sm sm:max-w-none mx-auto">
-            <button
-              type="button"
-              onClick={() => scrollToSection('rsvp')}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[48px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.16em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <span>RSVP Now</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onGoChallenge}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl bg-[#07543E]/85 hover:bg-[#07543E] text-white border border-[#C5A04A]/55 text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] backdrop-blur-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Sparkles className="w-4 h-4 text-[#F3E5AB]" />
-              <span>
-                {isChallengePassed
-                  ? `View Pass (${guestName.trim() || 'Cleared'})`
-                  : `${siteContent.hashtag} Challenge`}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onGoInvitation}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[48px] text-xs sm:text-sm font-medium tracking-[0.12em] uppercase text-[#F3E5AB] hover:text-white underline underline-offset-8 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <MailOpen className="w-4 h-4" />
-              <span>Digital Invite</span>
-            </button>
           </div>
         </div>
       </section>

@@ -338,6 +338,25 @@ export function getImageObjectPositionClass(
   }
 }
 
+export function getHeroResponsiveObjectPositionClass(
+  focalPosition: ImageFocalPosition
+): string {
+  switch (focalPosition) {
+    case 'top':
+      // Tailored across mobile, tablet, and desktop so both faces stay centered and clear of the lower editorial strip
+      return 'object-[52%_20%] sm:object-[52%_18%] md:object-[52%_16%] lg:object-[52%_14%] xl:object-[52%_15%]';
+    case 'bottom':
+      return 'object-[52%_82%] lg:object-bottom';
+    case 'left':
+      return 'object-left';
+    case 'right':
+      return 'object-right';
+    case 'center':
+    default:
+      return 'object-[52%_36%] lg:object-[52%_32%]';
+  }
+}
+
 export function getImageFitClass(fitMode: ImageFitMode): string {
   return fitMode === 'contain' ? 'object-contain' : 'object-cover';
 }
@@ -347,11 +366,11 @@ export function getHeroOverlayGradient(
 ): string {
   switch (intensity) {
     case 'light':
-      return 'linear-gradient(to top, rgba(7, 59, 43, 0.78) 0%, rgba(7, 59, 43, 0.36) 46%, rgba(7, 59, 43, 0.12) 100%)';
+      return 'linear-gradient(to top, rgba(7, 59, 43, 0.76) 0%, rgba(7, 59, 43, 0.40) 20%, rgba(7, 59, 43, 0.08) 38%, rgba(7, 59, 43, 0) 54%)';
     case 'strong':
-      return 'linear-gradient(to top, rgba(7, 59, 43, 0.98) 0%, rgba(7, 59, 43, 0.76) 46%, rgba(7, 59, 43, 0.44) 100%)';
+      return 'linear-gradient(to top, rgba(7, 59, 43, 0.90) 0%, rgba(7, 59, 43, 0.60) 26%, rgba(7, 59, 43, 0.16) 46%, rgba(7, 59, 43, 0) 64%)';
     case 'medium':
     default:
-      return 'linear-gradient(to top, rgba(7, 59, 43, 0.94) 0%, rgba(7, 59, 43, 0.58) 46%, rgba(7, 59, 43, 0.24) 100%)';
+      return 'linear-gradient(to top, rgba(7, 59, 43, 0.84) 0%, rgba(7, 59, 43, 0.48) 22%, rgba(7, 59, 43, 0.10) 40%, rgba(7, 59, 43, 0) 56%)';
   }
 }

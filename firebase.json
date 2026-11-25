@@ -1,0 +1,23 @@
+{
+  "firestore": {
+    "database": "ai-studio-thejosephdamilol-48d64c01-3ce9-41a4-9ee5-26dcad113d8b",
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "hosting-public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "the-joseph-damilola-wedding-challenge",
+          "region": "europe-west2"
+        }
+      }
+    ]
+  }
+}

@@ -343,7 +343,16 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Trust Firebase Hosting and Cloud Run reverse-proxy headers (X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For)
+  app.set('trust proxy', true);
+
   app.use(express.json({ limit: '1mb' }));
+
+  // Prevent CDN/reverse-proxy caching of dynamic API, OAuth, and admin endpoints
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    next();
+  });
 
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -1020,9 +1029,7 @@ async function startServer() {
           : 'guest_video';
 
       const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
-      const reqOrigin =
-        req.get('origin') ||
-        (req.get('host') ? `${req.protocol}://${req.get('host')}` : undefined);
+      const reqOrigin = req.get('origin') || deriveServerRequestOrigin(req);
 
       const session = await initiateDriveResumableSession({
         originalName,
@@ -1231,7 +1238,6 @@ async function startServer() {
       const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
       res.status(upstream.status === 206 ? 206 : 200);
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=3600');
       const acceptRanges = upstream.headers.get('accept-ranges') || 'bytes';
       res.setHeader('Accept-Ranges', acceptRanges);
 
@@ -1244,7 +1250,10 @@ async function startServer() {
         res.setHeader('Content-Length', contentLength);
       }
       if (req.query.download === '1') {
+        res.setHeader('Cache-Control', 'private, no-store');
         res.setHeader('Content-Disposition', `attachment; filename="mjay2026-${driveId}"`);
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
       }
 
       if (upstream.body) {
