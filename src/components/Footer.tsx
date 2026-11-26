@@ -1,7 +1,8 @@
 import React from 'react';
 import { Heart, Lock } from 'lucide-react';
-import { SectionTypographyElements } from '../types';
+import { SectionTypographyElements, VisibilitySettingsData } from '../types';
 import { getSectionTypographyProps } from '../utils/typography';
+import { DEFAULT_VISIBILITY_SETTINGS } from '../utils/visibilitySettings';
 
 interface FooterProps {
   coupleNames: string;
@@ -10,6 +11,7 @@ interface FooterProps {
   footerNote: string;
   puzzleEnabled?: boolean;
   giftingEnabled?: boolean;
+  visibilitySettings?: VisibilitySettingsData;
   typography?: SectionTypographyElements;
   onNavigateSection?: (sectionId: string) => void;
   onGoInvitation?: () => void;
@@ -24,6 +26,7 @@ export const Footer: React.FC<FooterProps> = ({
   footerNote,
   puzzleEnabled = true,
   giftingEnabled = true,
+  visibilitySettings = DEFAULT_VISIBILITY_SETTINGS,
   typography,
   onNavigateSection,
   onGoInvitation,
@@ -31,6 +34,21 @@ export const Footer: React.FC<FooterProps> = ({
   onGoAdmin
 }) => {
   const sectionTypoProps = getSectionTypographyProps('footer', typography);
+  const { sections, experience } = visibilitySettings;
+
+  const hasAnyFooterLinks = Boolean(
+    onNavigateSection &&
+      (sections.welcome ||
+        sections.ourStory ||
+        sections.schedule ||
+        (puzzleEnabled && experience.photoPuzzle) ||
+        (giftingEnabled && sections.gifting) ||
+        sections.qa ||
+        sections.rsvp ||
+        sections.gallery ||
+        (onGoInvitation && experience.digitalInvitation) ||
+        (onGoChallenge && experience.challenge))
+  );
 
   return (
     <footer
@@ -56,42 +74,54 @@ export const Footer: React.FC<FooterProps> = ({
           <span className="font-semibold text-[#07543E]">{hashtag}</span>
         </p>
 
-        {onNavigateSection && (
+        {hasAnyFooterLinks && onNavigateSection && (
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-1 text-sm font-medium text-[#07543E]">
-            <button data-typo="button" type="button" onClick={() => onNavigateSection('welcome')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
-              Welcome
-            </button>
-            <button data-typo="button" type="button" onClick={() => onNavigateSection('story')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
-              Our Story
-            </button>
-            <button data-typo="button" type="button" onClick={() => onNavigateSection('schedule')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
-              Schedule
-            </button>
-            {puzzleEnabled && (
+            {sections.welcome && (
+              <button data-typo="button" type="button" onClick={() => onNavigateSection('welcome')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                Welcome
+              </button>
+            )}
+            {sections.ourStory && (
+              <button data-typo="button" type="button" onClick={() => onNavigateSection('story')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                Our Story
+              </button>
+            )}
+            {sections.schedule && (
+              <button data-typo="button" type="button" onClick={() => onNavigateSection('schedule')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                Schedule
+              </button>
+            )}
+            {puzzleEnabled && experience.photoPuzzle && (
               <button data-typo="button" type="button" onClick={() => onNavigateSection('puzzle')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
                 Photo Puzzle
               </button>
             )}
-            {giftingEnabled && (
+            {giftingEnabled && sections.gifting && (
               <button data-typo="button" type="button" onClick={() => onNavigateSection('gifting')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
                 Gifting
               </button>
             )}
-            <button data-typo="button" type="button" onClick={() => onNavigateSection('faq')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
-              Q&amp;A
-            </button>
-            <button data-typo="button" type="button" onClick={() => onNavigateSection('rsvp')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
-              RSVP
-            </button>
-            <button data-typo="button" type="button" onClick={() => onNavigateSection('gallery')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
-              Gallery
-            </button>
-            {onGoInvitation && (
+            {sections.qa && (
+              <button data-typo="button" type="button" onClick={() => onNavigateSection('faq')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                Q&amp;A
+              </button>
+            )}
+            {sections.rsvp && (
+              <button data-typo="button" type="button" onClick={() => onNavigateSection('rsvp')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                RSVP
+              </button>
+            )}
+            {sections.gallery && (
+              <button data-typo="button" type="button" onClick={() => onNavigateSection('gallery')} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
+                Gallery
+              </button>
+            )}
+            {onGoInvitation && experience.digitalInvitation && (
               <button data-typo="button" type="button" onClick={onGoInvitation} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
                 Digital Invite
               </button>
             )}
-            {onGoChallenge && (
+            {onGoChallenge && experience.challenge && (
               <button data-typo="button" type="button" onClick={onGoChallenge} className="min-h-[44px] inline-flex items-center px-1.5 hover:underline underline-offset-4 cursor-pointer">
                 Guest Challenge
               </button>
@@ -126,3 +156,4 @@ export const Footer: React.FC<FooterProps> = ({
     </footer>
   );
 };
+

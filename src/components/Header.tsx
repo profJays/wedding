@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, Pause, Play, X } from 'lucide-react';
-import { AppView } from '../types';
+import { AppView, VisibilitySettingsData } from '../types';
+import { DEFAULT_VISIBILITY_SETTINGS } from '../utils/visibilitySettings';
 
 interface HeaderProps {
   coupleNames: string;
   activeView: AppView;
   puzzleEnabled?: boolean;
   giftingEnabled?: boolean;
+  visibilitySettings?: VisibilitySettingsData;
   showMusicToggle?: boolean;
   isMusicPlaying?: boolean;
   hasMusicTrack?: boolean;
@@ -21,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeView,
   puzzleEnabled = true,
   giftingEnabled = true,
+  visibilitySettings = DEFAULT_VISIBILITY_SETTINGS,
   showMusicToggle = false,
   isMusicPlaying = false,
   hasMusicTrack = false,
@@ -31,21 +34,25 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const { sections, experience } = visibilitySettings;
+
   const leftNavItems = [
-    { id: 'welcome', label: 'Welcome' },
-    { id: 'story', label: 'Our Story' },
-    { id: 'schedule', label: 'Schedule' },
-    ...(puzzleEnabled ? [{ id: 'puzzle', label: 'Puzzle' }] : [])
+    ...(sections.welcome ? [{ id: 'welcome', label: 'Welcome' }] : []),
+    ...(sections.ourStory ? [{ id: 'story', label: 'Our Story' }] : []),
+    ...(sections.schedule ? [{ id: 'schedule', label: 'Schedule' }] : []),
+    ...(puzzleEnabled && experience.photoPuzzle ? [{ id: 'puzzle', label: 'Puzzle' }] : [])
   ];
 
   const rightNavItems = [
-    ...(giftingEnabled ? [{ id: 'gifting', label: 'Gifting' }] : []),
-    { id: 'faq', label: 'Q&A' },
-    { id: 'rsvp', label: 'RSVP' },
-    { id: 'gallery', label: 'Gallery' }
+    ...(giftingEnabled && sections.gifting ? [{ id: 'gifting', label: 'Gifting' }] : []),
+    ...(sections.qa ? [{ id: 'faq', label: 'Q&A' }] : []),
+    ...(sections.rsvp ? [{ id: 'rsvp', label: 'RSVP' }] : []),
+    ...(sections.gallery ? [{ id: 'gallery', label: 'Gallery' }] : [])
   ];
 
   const navItems = [...leftNavItems, ...rightNavItems];
+  const hasMobileMenuItems =
+    navItems.length > 0 || experience.digitalInvitation || experience.challenge;
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -150,7 +157,7 @@ export const Header: React.FC<HeaderProps> = ({
           </nav>
 
           <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto lg:ml-0">
-            {puzzleEnabled && (
+            {puzzleEnabled && experience.photoPuzzle && (
               <button
                 type="button"
                 onClick={() => handleSectionClick('puzzle')}
@@ -161,21 +168,23 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((prev) => !prev)}
-              className="lg:hidden inline-flex items-center justify-center w-11 h-11 rounded-lg text-[#07543E] hover:bg-[#07543E]/8 transition-colors cursor-pointer shrink-0"
-              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+            {hasMobileMenuItems && (
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                className="lg:hidden inline-flex items-center justify-center w-11 h-11 rounded-lg text-[#07543E] hover:bg-[#07543E]/8 transition-colors cursor-pointer shrink-0"
+                aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={mobileMenuOpen}
+              >
+                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Collapsible Mobile Navigation Menu */}
-      {mobileMenuOpen && (
+      {mobileMenuOpen && hasMobileMenuItems && (
         <div className="lg:hidden border-t border-[#C5A04A]/20 bg-[#FAF7F0] px-4 py-3 shadow-md">
           <nav
             aria-label="Mobile Navigation"
@@ -191,30 +200,34 @@ export const Header: React.FC<HeaderProps> = ({
                 {item.label}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                onGoInvitation();
-              }}
-              className="text-left px-3 min-h-[44px] flex items-center rounded-md hover:bg-[#07543E]/8 text-[#07543E] cursor-pointer"
-            >
-              Digital Invite
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                onGoChallenge();
-              }}
-              className={`col-span-2 text-left px-3 min-h-[46px] flex items-center rounded-md font-semibold cursor-pointer ${
-                activeView === 'welcome' || activeView === 'quiz'
-                  ? 'bg-[#07543E] text-white'
-                  : 'bg-[#F2EBDD] text-[#07543E]'
-              }`}
-            >
-              Wedding Guest Challenge
-            </button>
+            {experience.digitalInvitation && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onGoInvitation();
+                }}
+                className="text-left px-3 min-h-[44px] flex items-center rounded-md hover:bg-[#07543E]/8 text-[#07543E] cursor-pointer"
+              >
+                Digital Invite
+              </button>
+            )}
+            {experience.challenge && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onGoChallenge();
+                }}
+                className={`col-span-2 text-left px-3 min-h-[46px] flex items-center rounded-md font-semibold cursor-pointer ${
+                  activeView === 'welcome' || activeView === 'quiz'
+                    ? 'bg-[#07543E] text-white'
+                    : 'bg-[#F2EBDD] text-[#07543E]'
+                }`}
+              >
+                Wedding Guest Challenge
+              </button>
+            )}
           </nav>
         </div>
       )}

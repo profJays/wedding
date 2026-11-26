@@ -42,8 +42,13 @@ import type {
   UploadBatchResponse,
   UploadErrorCode,
   UploadFileResult,
-  UploadedFileMetadata
+  UploadedFileMetadata,
+  VisibilitySettingsData
 } from './src/types.ts';
+import {
+  DEFAULT_VISIBILITY_SETTINGS,
+  normalizeVisibilitySettings
+} from './src/utils/visibilitySettings.ts';
 
 interface FirebaseAppletConfig {
   projectId: string;
@@ -214,6 +219,62 @@ async function resolveGalleryUnlockFromFirestore(
   return { unlockISO: DEFAULT_GALLERY_UNLOCK_ISO, unlockEpochMs: defaultMs };
 }
 
+interface FirestoreBoolMapField {
+  mapValue?: {
+    fields?: Record<string, { booleanValue?: boolean }>;
+  };
+}
+
+function extractFirestoreBoolGroup(
+  field: FirestoreBoolMapField | undefined
+): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  const mapFields = field?.mapValue?.fields;
+  if (!mapFields || typeof mapFields !== 'object') return out;
+  for (const [key, val] of Object.entries(mapFields)) {
+    if (val && typeof val.booleanValue === 'boolean') {
+      out[key] = val.booleanValue;
+    }
+  }
+  return out;
+}
+
+async function resolveVisibilitySettingsFromFirestore(
+  cfg: FirebaseAppletConfig
+): Promise<VisibilitySettingsData> {
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      cfg.projectId
+    )}/databases/${encodeURIComponent(cfg.firestoreDatabaseId)}/documents/siteContent/visibilitySettings`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      return normalizeVisibilitySettings(DEFAULT_VISIBILITY_SETTINGS);
+    }
+    const doc = (await res.json()) as {
+      fields?: {
+        experience?: FirestoreBoolMapField;
+        sections?: FirestoreBoolMapField;
+        interactions?: FirestoreBoolMapField;
+      };
+    };
+    return normalizeVisibilitySettings({
+      experience: extractFirestoreBoolGroup(doc.fields?.experience),
+      sections: extractFirestoreBoolGroup(doc.fields?.sections),
+      interactions: extractFirestoreBoolGroup(doc.fields?.interactions)
+    });
+  } catch {
+    return normalizeVisibilitySettings(DEFAULT_VISIBILITY_SETTINGS);
+  }
+}
+
+function isGuestUploadAllowedByVisibility(vis: VisibilitySettingsData): boolean {
+  return Boolean(
+    vis.experience.mainWebsite &&
+      vis.sections.gallery &&
+      vis.interactions.guestUploads
+  );
+}
+
 function formatLagosTime(epochMs: number): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Africa/Lagos',
@@ -338,10 +399,33 @@ async function requireAdminRequest(
   return { uid: tokenInfo.uid, email: tokenInfo.email };
 }
 
+function resolveServerPort(): number {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--port' || arg === '-p') {
+      const next = Number(args[i + 1]);
+      if (Number.isInteger(next) && next > 0 && next < 65536) {
+        return next;
+      }
+    } else if (arg.startsWith('--port=')) {
+      const parsed = Number(arg.slice('--port='.length));
+      if (Number.isInteger(parsed) && parsed > 0 && parsed < 65536) {
+        return parsed;
+      }
+    }
+  }
+  const envPort = Number(process.env.PORT);
+  if (Number.isInteger(envPort) && envPort > 0 && envPort < 65536) {
+    return envPort;
+  }
+  return 3000;
+}
+
 async function startServer() {
   const firebaseCfg = loadFirebaseConfig();
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = resolveServerPort();
 
   // Trust Firebase Hosting and Cloud Run reverse-proxy headers (X-Forwarded-Proto, X-Forwarded-Host, X-Forwarded-For)
   app.set('trust proxy', true);
@@ -362,9 +446,9 @@ async function startServer() {
     }
   });
 
-  // Authoritative Server Health Check
-  app.get('/api/health', async (_req, res) => {
-    await ensureServerRefreshVerifiedIfNeeded();
+  // Authoritative Server Health Check (fast, non-blocking for readiness probes)
+  app.get('/api/health', (_req, res) => {
+    void ensureServerRefreshVerifiedIfNeeded().catch(() => {});
     const driveStatus = getDriveConnectionStatus();
     res.json({
       ok: true,
@@ -389,17 +473,20 @@ async function startServer() {
   // Authoritative Server-Side Gallery Lock & Drive Storage Status
   app.get('/api/gallery/status', async (req, res) => {
     const nowMs = Date.now();
-    const [{ unlockISO, unlockEpochMs }] = await Promise.all([
+    const [{ unlockISO, unlockEpochMs }, visibility] = await Promise.all([
       resolveGalleryUnlockFromFirestore(firebaseCfg),
+      resolveVisibilitySettingsFromFirestore(firebaseCfg),
       ensureServerRefreshVerifiedIfNeeded()
     ]);
     const driveStatus = getDriveConnectionStatus({
       fallbackRequestOrigin: deriveServerRequestOrigin(req)
     });
     const isUnlocked = nowMs >= unlockEpochMs;
+    const guestUploadsEnabled = isGuestUploadAllowedByVisibility(visibility);
 
     res.json({
       isUnlocked,
+      guestUploadsEnabled,
       serverTimeMs: nowMs,
       serverTimeLagosFormatted: formatLagosTime(nowMs),
       unlockAtISO: unlockISO,
@@ -628,7 +715,10 @@ async function startServer() {
 
       try {
         const nowMs = Date.now();
-        const { unlockISO, unlockEpochMs } = await resolveGalleryUnlockFromFirestore(firebaseCfg);
+        const [{ unlockISO, unlockEpochMs }, visibility] = await Promise.all([
+          resolveGalleryUnlockFromFirestore(firebaseCfg),
+          resolveVisibilitySettingsFromFirestore(firebaseCfg)
+        ]);
 
         let isAdminUpload = false;
         const authHeader = req.headers.authorization;
@@ -643,6 +733,18 @@ async function startServer() {
               rawToken
             );
           }
+        }
+
+        if (!isAdminUpload && !isGuestUploadAllowedByVisibility(visibility)) {
+          res.status(403).json({
+            error: 'Guest photo and video uploads are currently disabled by the couple.',
+            code: 'GUEST_UPLOADS_DISABLED',
+            serverTimeMs: nowMs,
+            uploaded: [],
+            results: [],
+            summary: { total: 0, succeeded: 0, failed: 0 }
+          });
+          return;
         }
 
         if (!isAdminUpload && nowMs < unlockEpochMs) {
@@ -945,8 +1047,20 @@ async function startServer() {
   app.post('/api/gallery/upload/resumable/init', async (req, res) => {
     try {
       const nowMs = Date.now();
-      const { unlockISO, unlockEpochMs } = await resolveGalleryUnlockFromFirestore(firebaseCfg);
-      const isAdminUpload = await checkOptionalAdminUpload(req);
+      const [{ unlockISO, unlockEpochMs }, visibility, isAdminUpload] = await Promise.all([
+        resolveGalleryUnlockFromFirestore(firebaseCfg),
+        resolveVisibilitySettingsFromFirestore(firebaseCfg),
+        checkOptionalAdminUpload(req)
+      ]);
+
+      if (!isAdminUpload && !isGuestUploadAllowedByVisibility(visibility)) {
+        res.status(403).json({
+          error: 'Guest photo and video uploads are currently disabled by the couple.',
+          code: 'GUEST_UPLOADS_DISABLED',
+          serverTimeMs: nowMs
+        });
+        return;
+      }
 
       if (!isAdminUpload && nowMs < unlockEpochMs) {
         res.status(403).json({
@@ -1152,7 +1266,19 @@ async function startServer() {
         return;
       }
 
-      const isAdminUpload = await checkOptionalAdminUpload(req);
+      const [isAdminUpload, visibility] = await Promise.all([
+        checkOptionalAdminUpload(req),
+        resolveVisibilitySettingsFromFirestore(firebaseCfg)
+      ]);
+
+      if (!isAdminUpload && !isGuestUploadAllowedByVisibility(visibility)) {
+        res.status(403).json({
+          error: 'Guest photo and video uploads are currently disabled by the couple.',
+          code: 'GUEST_UPLOADS_DISABLED'
+        });
+        return;
+      }
+
       const driveTokenHeader = req.header('X-Google-Drive-Token') || '';
 
       const stored = await completeDriveResumableSession({
@@ -1294,12 +1420,17 @@ async function startServer() {
   });
 
   // Vite dev middleware or production static serving
+  let viteServer: Awaited<ReturnType<typeof createViteServer>> | null = null;
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+    const disableHmr = process.env.DISABLE_HMR === 'true';
+    viteServer = await createViteServer({
+      server: {
+        middlewareMode: true,
+        ...(disableHmr ? { hmr: false, ws: false, watch: null } : {})
+      },
       appType: 'spa'
     });
-    app.use(vite.middlewares);
+    app.use(viteServer.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distDir));
@@ -1308,12 +1439,22 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Mary & Joseph (#mjay2026) server running on http://0.0.0.0:${PORT}`);
     logDriveOAuthStartupDiagnostics();
     // Proactively verify server refresh token on boot so connection status is accurate immediately
     void ensureServerRefreshVerifiedIfNeeded().catch(() => {});
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`Received ${signal}, shutting down server gracefully...`);
+    httpServer.close(() => {
+      void viteServer?.close().finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer().catch((err) => {

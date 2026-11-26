@@ -6,6 +6,7 @@ interface InvitationScreenProps {
   onContinue: () => void;
   onExploreWebsite: () => void;
   canReturnToWebsite?: boolean;
+  challengeEnabled?: boolean;
 }
 
 type EnvelopePhase = 'sealed' | 'breaking' | 'opened';
@@ -100,7 +101,8 @@ const BotanicalPatternSvg: React.FC<{ side: 'left' | 'right' }> = ({ side }) => 
 export const InvitationScreen: React.FC<InvitationScreenProps> = ({
   onContinue,
   onExploreWebsite,
-  canReturnToWebsite = false
+  canReturnToWebsite = false,
+  challengeEnabled = true
 }) => {
   const [phase, setPhase] = useState<EnvelopePhase>('sealed');
   const [isLeaving, setIsLeaving] = useState(false);
@@ -271,9 +273,11 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                 <span className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-[#D4AF37]" />
               </div>
 
-              {/* Exact Required Sub-Message */}
+              {/* Exact Required Sub-Message (adapts gracefully when Challenge is switched off) */}
               <p className="font-serif italic text-[17px] sm:text-lg text-[#18261D]/85 leading-relaxed max-w-xs sm:max-w-sm mb-5 sm:mb-6">
-                Before you explore our celebration, we have a little challenge for you!
+                {challengeEnabled
+                  ? 'Before you explore our celebration, we have a little challenge for you!'
+                  : 'We are delighted to celebrate this joyful milestone with you. Step inside to explore our wedding website.'}
               </p>
 
               {/* Beautiful CONTINUE Button */}

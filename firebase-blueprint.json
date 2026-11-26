@@ -190,6 +190,19 @@
         "updatedAt"
       ]
     },
+    "VisibilitySettings": {
+      "title": "VisibilitySettings",
+      "description": "Publicly readable, admin-editable feature and section visibility controls stored at siteContent/visibilitySettings (including independent experience.challenge and experience.photoPuzzle flags).",
+      "type": "object",
+      "properties": {
+        "experience": { "type": "object" },
+        "sections": { "type": "object" },
+        "interactions": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedByUid": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["experience", "sections", "interactions", "updatedAt", "updatedByUid"]
+    },
     "AdminUser": {
       "title": "AdminUser",
       "description": "Authorized administrator registry entries for RBAC checks.",
@@ -207,7 +220,11 @@
   "firestore": {
     "/siteContent/{contentId}": {
       "schema": { "$ref": "#/entities/SiteContent" },
-      "description": "Website copy, schedule, Q&A, gifting settings, section typography, slideshow configuration, and global wedding site settings."
+      "description": "Website copy, schedule, Q&A, gifting settings, section typography, slideshow configuration, and global wedding site settings (main document)."
+    },
+    "/siteContent/visibilitySettings": {
+      "schema": { "$ref": "#/entities/VisibilitySettings" },
+      "description": "Independent ON/OFF controls for visitor experiences, main website sections, and guest interactions; publicly readable and strictly admin-writable."
     },
     "/rsvps/{rsvpId}": {
       "schema": { "$ref": "#/entities/RsvpRecord" },

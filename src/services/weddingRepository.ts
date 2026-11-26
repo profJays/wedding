@@ -27,8 +27,13 @@ import {
   sanitizeSectionImagesMap
 } from '../utils/websiteImages';
 import {
+  DEFAULT_VISIBILITY_SETTINGS,
+  normalizeVisibilitySettings
+} from '../utils/visibilitySettings';
+import {
   SiteContentData,
   SectionImagesMap,
+  VisibilitySettingsData,
   RsvpRecord,
   GalleryItem,
   AdminUser,
@@ -49,6 +54,7 @@ import {
 } from '../types';
 
 const SITE_CONTENT_DOC_PATH = 'siteContent/main';
+const VISIBILITY_SETTINGS_DOC_PATH = 'siteContent/visibilitySettings';
 const BOOTSTRAPPED_ADMIN_EMAIL = 'joepreserve@gmail.com';
 const BOOTSTRAPPED_ADMIN_UID = 'oFuTnbSimLQSRIaYzMIShk0oQm92';
 
@@ -1814,11 +1820,103 @@ export async function submitGuestSongSuggestion(input: {
     return { id: docId, alreadySuggested: false };
   } catch (error) {
     const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-    // Deterministic ID + write-once create rule blocks duplicate spam cleanly
+    // Distinguish visibility-disabled rejection from deterministic duplicate-ID write-once rule
     if (msg.includes('permission') || msg.includes('insufficient')) {
+      try {
+        const visSnap = await getDoc(doc(db, 'siteContent', 'visibilitySettings'));
+        const vis = normalizeVisibilitySettings(visSnap.exists() ? visSnap.data() : null);
+        if (
+          !vis.experience.mainWebsite ||
+          !vis.experience.photoPuzzle ||
+          !vis.interactions.songSuggestions
+        ) {
+          throw new Error('Song suggestions are currently disabled by the couple.');
+        }
+      } catch (checkErr) {
+        if (
+          checkErr instanceof Error &&
+          checkErr.message.includes('currently disabled')
+        ) {
+          throw checkErr;
+        }
+      }
       return { id: docId, alreadySuggested: true };
     }
     handleFirestoreError(error, OperationType.CREATE, `songSuggestions/${docId}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 7. Website Visibility & Experience Controls (siteContent/visibilitySettings)
+// ---------------------------------------------------------------------------
+export function subscribeVisibilitySettings(
+  onData: (settings: VisibilitySettingsData) => void,
+  onReady?: () => void
+): () => void {
+  const ref = doc(db, 'siteContent', 'visibilitySettings');
+  let signaledReady = false;
+  const markReady = () => {
+    if (!signaledReady) {
+      signaledReady = true;
+      onReady?.();
+    }
+  };
+
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (!snap.exists()) {
+        onData(normalizeVisibilitySettings(DEFAULT_VISIBILITY_SETTINGS));
+      } else {
+        onData(normalizeVisibilitySettings(snap.data()));
+      }
+      markReady();
+    },
+    () => {
+      // Safe default: preserve full wedding experience if offline or unreachable
+      onData(normalizeVisibilitySettings(DEFAULT_VISIBILITY_SETTINGS));
+      markReady();
+    }
+  );
+}
+
+export async function saveVisibilitySettings(
+  settings: VisibilitySettingsData
+): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('Administrator authentication is required to update visibility controls.');
+  }
+
+  const normalized = normalizeVisibilitySettings(settings);
+  try {
+    await setDoc(doc(db, 'siteContent', 'visibilitySettings'), {
+      experience: {
+        digitalInvitation: normalized.experience.digitalInvitation,
+        challenge: normalized.experience.challenge,
+        photoPuzzle: normalized.experience.photoPuzzle,
+        backgroundMusic: normalized.experience.backgroundMusic,
+        mainWebsite: normalized.experience.mainWebsite
+      },
+      sections: {
+        welcome: normalized.sections.welcome,
+        ourStory: normalized.sections.ourStory,
+        schedule: normalized.sections.schedule,
+        gifting: normalized.sections.gifting,
+        qa: normalized.sections.qa,
+        rsvp: normalized.sections.rsvp,
+        gallery: normalized.sections.gallery
+      },
+      interactions: {
+        guestUploads: normalized.interactions.guestUploads,
+        songSuggestions: normalized.interactions.songSuggestions,
+        puzzleSongRewards: normalized.interactions.puzzleSongRewards
+      },
+      updatedAt: serverTimestamp(),
+      updatedByUid: uid
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, VISIBILITY_SETTINGS_DOC_PATH);
   }
 }
 

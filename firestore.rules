@@ -34,6 +34,94 @@ service cloud.firestore {
       );
     }
 
+    // Website Visibility & Experience Controls validation (siteContent/visibilitySettings)
+    function isValidVisibilityExperience(exp) {
+      return exp is map
+        && exp.keys().hasAll(['digitalInvitation', 'challenge', 'photoPuzzle', 'backgroundMusic', 'mainWebsite'])
+        && exp.keys().hasOnly(['digitalInvitation', 'challenge', 'photoPuzzle', 'backgroundMusic', 'mainWebsite'])
+        && exp.digitalInvitation is bool
+        && exp.challenge is bool
+        && exp.photoPuzzle is bool
+        && exp.backgroundMusic is bool
+        && exp.mainWebsite is bool;
+    }
+
+    function isValidVisibilitySections(sec) {
+      return sec is map
+        && sec.keys().hasAll(['welcome', 'ourStory', 'schedule', 'gifting', 'qa', 'rsvp', 'gallery'])
+        && sec.keys().hasOnly(['welcome', 'ourStory', 'schedule', 'gifting', 'qa', 'rsvp', 'gallery'])
+        && sec.welcome is bool
+        && sec.ourStory is bool
+        && sec.schedule is bool
+        && sec.gifting is bool
+        && sec.qa is bool
+        && sec.rsvp is bool
+        && sec.gallery is bool;
+    }
+
+    function isValidVisibilityInteractions(inter) {
+      return inter is map
+        && inter.keys().hasAll(['guestUploads', 'songSuggestions', 'puzzleSongRewards'])
+        && inter.keys().hasOnly(['guestUploads', 'songSuggestions', 'puzzleSongRewards'])
+        && inter.guestUploads is bool
+        && inter.songSuggestions is bool
+        && inter.puzzleSongRewards is bool;
+    }
+
+    function isValidVisibilitySettings(data) {
+      return data.keys().hasAll(['experience', 'sections', 'interactions', 'updatedAt', 'updatedByUid'])
+        && data.keys().hasOnly(['experience', 'sections', 'interactions', 'updatedAt', 'updatedByUid'])
+        && isValidVisibilityExperience(data.experience)
+        && isValidVisibilitySections(data.sections)
+        && isValidVisibilityInteractions(data.interactions)
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time
+        && data.updatedByUid is string
+        && data.updatedByUid.size() >= 1
+        && data.updatedByUid.size() <= 128
+        && data.updatedByUid == request.auth.uid;
+    }
+
+    // Visibility settings backend enforcement helpers (default to TRUE when doc or key is absent)
+    function visibilityDocExists() {
+      return exists(/databases/$(database)/documents/siteContent/visibilitySettings);
+    }
+    function visibilityData() {
+      return get(/databases/$(database)/documents/siteContent/visibilitySettings).data;
+    }
+    function isMainWebsiteVisible() {
+      return !visibilityDocExists()
+        || !('experience' in visibilityData())
+        || !('mainWebsite' in visibilityData().experience)
+        || visibilityData().experience.mainWebsite == true;
+    }
+    function isRsvpVisibilityEnabled() {
+      return isMainWebsiteVisible() && (
+        !visibilityDocExists()
+        || !('sections' in visibilityData())
+        || !('rsvp' in visibilityData().sections)
+        || visibilityData().sections.rsvp == true
+      );
+    }
+    function isGuestUploadsVisibilityEnabled() {
+      return isMainWebsiteVisible() && (
+        !visibilityDocExists()
+        || (
+          (!('sections' in visibilityData()) || !('gallery' in visibilityData().sections) || visibilityData().sections.gallery == true)
+          && (!('interactions' in visibilityData()) || !('guestUploads' in visibilityData().interactions) || visibilityData().interactions.guestUploads == true)
+        )
+      );
+    }
+    function isSongSuggestionsVisibilityEnabled() {
+      return isMainWebsiteVisible() && (
+        !visibilityDocExists()
+        || (
+          (!('experience' in visibilityData()) || !('photoPuzzle' in visibilityData().experience) || visibilityData().experience.photoPuzzle == true)
+          && (!('interactions' in visibilityData()) || !('songSuggestions' in visibilityData().interactions) || visibilityData().interactions.songSuggestions == true)
+        )
+      );
+    }
+
     // Slideshow fields validation (used by safe partial slideshow updates on siteContent/main)
     function isValidSlideshowFields(data) {
       return (!('slideshowAutoplay' in data) || data.slideshowAutoplay is bool)
@@ -227,8 +315,10 @@ service cloud.firestore {
     }
 
     function isRsvpCurrentlyOpen() {
-      return !exists(/databases/$(database)/documents/siteContent/main)
-        || get(/databases/$(database)/documents/siteContent/main).data.rsvpOpen == true;
+      return isRsvpVisibilityEnabled() && (
+        !exists(/databases/$(database)/documents/siteContent/main)
+        || get(/databases/$(database)/documents/siteContent/main).data.rsvpOpen == true
+      );
     }
 
     function getGalleryUnlockEpochMs() {
@@ -360,38 +450,54 @@ service cloud.firestore {
         && data.addedBy is string && data.addedBy == request.auth.uid;
     }
 
-    // 1. Site Content & Settings (Public read for wedding site; strictly admin-only writes with safe partial updates)
+    // 1. Site Content & Visibility Settings (Public get for wedding site; strictly admin-only writes)
     match /siteContent/{contentId} {
       allow get: if isValidId(contentId);
       allow list: if isAdmin();
       allow create: if isSignedIn()
         && isValidId(contentId)
         && isAdmin()
-        && isValidSiteContent(incoming())
-        && incoming().updatedAt == request.time;
+        && (
+          (contentId == 'visibilitySettings' && isValidVisibilitySettings(incoming()))
+          || (
+            contentId != 'visibilitySettings'
+            && isValidSiteContent(incoming())
+            && incoming().updatedAt == request.time
+          )
+        );
       allow update: if isSignedIn()
         && isValidId(contentId)
         && isAdmin()
         && (
-          isValidSlideshowPartialUpdate(incoming(), existing())
-          || isValidWebsiteImagesPartialUpdate(incoming(), existing())
+          (
+            contentId == 'visibilitySettings'
+            && isValidVisibilitySettings(incoming())
+            && incoming().diff(existing()).affectedKeys().hasOnly(['experience', 'sections', 'interactions', 'updatedAt', 'updatedByUid'])
+          )
           || (
-            isValidSiteContent(incoming())
-            && incoming().updatedAt == request.time
+            contentId != 'visibilitySettings'
+            && (
+              isValidSlideshowPartialUpdate(incoming(), existing())
+              || isValidWebsiteImagesPartialUpdate(incoming(), existing())
+              || (
+                isValidSiteContent(incoming())
+                && incoming().updatedAt == request.time
+              )
+            )
           )
         );
       allow delete: if isAdmin() && isValidId(contentId);
     }
 
-    // 2. RSVP Records (Zero public read/list; write-once create for guests; full management for verified Admin)
+    // 2. RSVP Records (Zero public read/list; write-once create for guests when RSVP is open & visible; full management for verified Admin)
     match /rsvps/{rsvpId} {
       allow get: if isAdmin() && isValidId(rsvpId);
       allow list: if isAdmin();
       allow create: if isValidId(rsvpId)
-        && isRsvpCurrentlyOpen()
         && isValidRsvp(incoming(), getConfiguredMaxGuests())
         && incoming().submittedAt == request.time
-        && incoming().updatedAt == request.time;
+        && incoming().updatedAt == request.time
+        && isRsvpCurrentlyOpen();
       allow update: if isAdmin()
         && isValidId(rsvpId)
         && isValidRsvp(incoming(), 10)
@@ -401,7 +507,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(rsvpId);
     }
 
-    // 3. Gallery Items (Server-time locked before Dec 12 2026 00:00 WAT; guests submit as 'pending')
+    // 3. Gallery Items (Server-time locked & visibility-controlled for guests; guests submit as 'pending')
     match /galleryItems/{itemId} {
       allow get: if isValidId(itemId) && (isAdmin() || existing().status == 'approved');
       allow list: if isAdmin() || resource.data.status == 'approved';
@@ -412,8 +518,9 @@ service cloud.firestore {
         && (
           isAdmin() || (
             incoming().mediaType in ['image', 'video']
-            && request.time.toMillis() >= getGalleryUnlockEpochMs()
             && incoming().status == 'pending'
+            && isGuestUploadsVisibilityEnabled()
+            && request.time.toMillis() >= getGalleryUnlockEpochMs()
           )
         );
       allow update: if isAdmin()
@@ -455,7 +562,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(trackId);
     }
 
-    // 5. Private Guest Song Suggestions (Zero public read/list; write-once create for guests; admin moderation only)
+    // 5. Private Guest Song Suggestions (Zero public read/list; write-once create when enabled; admin moderation only)
     match /songSuggestions/{suggestionId} {
       allow get: if isAdmin() && isValidId(suggestionId);
       allow list: if isAdmin();
@@ -463,7 +570,8 @@ service cloud.firestore {
         && isValidSongSuggestion(incoming())
         && incoming().status == 'new'
         && incoming().createdAt == request.time
-        && incoming().updatedAt == request.time;
+        && incoming().updatedAt == request.time
+        && isSongSuggestionsVisibilityEnabled();
       allow update: if isAdmin()
         && isValidId(suggestionId)
         && isValidSongSuggestion(incoming())

@@ -42,6 +42,7 @@ import {
 interface GallerySectionProps {
   galleryPublicEnabled: boolean;
   galleryUnlockISO: string;
+  guestUploadsEnabled?: boolean;
   coupleNames?: string;
   slideshowItems?: SlideshowSlideItem[];
   slideshowAutoplay?: boolean;
@@ -78,6 +79,7 @@ function computeCountdownFromServerOffset(
 export const GallerySection: React.FC<GallerySectionProps> = ({
   galleryPublicEnabled,
   galleryUnlockISO,
+  guestUploadsEnabled = true,
   coupleNames = 'Mary & Joseph',
   slideshowItems = [],
   slideshowAutoplay = true,
@@ -160,7 +162,11 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [lightboxItem]);
 
-  const isServerUnlocked = Boolean(serverStatus?.isUnlocked && countdown.unlocked);
+  const isGuestUploadsVisible =
+    guestUploadsEnabled && serverStatus?.guestUploadsEnabled !== false;
+  const isServerUnlocked = Boolean(
+    isGuestUploadsVisible && serverStatus?.isUnlocked && countdown.unlocked
+  );
 
   const activeLimits = useMemo(
     () => ({
@@ -226,7 +232,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
   };
 
   const executeUploadBatch = async (entriesToSend: SelectedUploadEntry[]) => {
-    if (!isServerUnlocked || uploading || entriesToSend.length === 0) return;
+    if (!isGuestUploadsVisible || !isServerUnlocked || uploading || entriesToSend.length === 0) return;
 
     const reportForBatch = validateUploadEntries(entriesToSend, activeLimits);
     if (reportForBatch.hasErrors) {
@@ -362,7 +368,9 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
             data-typo="body"
             className="text-base sm:text-lg text-[#262820]/80 leading-relaxed"
           >
-            {AUTHORITATIVE_GALLERY_LOCK_MESSAGE}
+            {isGuestUploadsVisible
+              ? AUTHORITATIVE_GALLERY_LOCK_MESSAGE
+              : 'Explore curated highlights and treasured memories from our celebration.'}
           </p>
           <div className="mt-6 h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent" />
         </div>
@@ -378,6 +386,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
         )}
 
         {/* PART 2: CAPTURED BY YOU (Preserved Guest Photo & Video Upload + Gallery) */}
+        {(isGuestUploadsVisible || (galleryPublicEnabled && approvedItems.length > 0)) ? (
         <div className={enabledSlides.length > 0 ? 'pt-10 border-t border-[#07543E]/12' : ''}>
           <div className="text-center max-w-xl mx-auto mb-8">
             <p
@@ -394,7 +403,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
             </h3>
           </div>
 
-          {statusError && (
+          {isGuestUploadsVisible && statusError && (
             <div className="max-w-xl mx-auto mb-6 p-4 rounded-lg bg-[#FFFDF8] border border-[#C5A04A]/40 text-sm text-[#262820]/85 flex items-center gap-2.5 justify-center">
               <AlertCircle className="w-4 h-4 text-[#C5A04A] shrink-0" />
               <span>{statusError}</span>
@@ -402,7 +411,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
           )}
 
         {/* BEFORE THE WEDDING DAY: Server-Enforced Locked Upload Card + Gallery Unlock Countdown */}
-        {!isServerUnlocked ? (
+        {!isGuestUploadsVisible ? null : !isServerUnlocked ? (
           <div className="max-w-2xl mx-auto p-5 min-[360px]:p-6 sm:p-10 rounded-xl bg-[#FAF7F0] border border-[#C5A04A]/40 text-center space-y-6">
             <div className="w-12 h-12 mx-auto rounded-full bg-[#07543E]/10 text-[#07543E] flex items-center justify-center">
               <Lock className="w-5 h-5" />
@@ -801,6 +810,13 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
           </div>
         )}
         </div>
+        ) : enabledSlides.length === 0 ? (
+          <div className="max-w-xl mx-auto p-6 rounded-xl bg-[#FAF7F0] border border-[#07543E]/12 text-center">
+            <p className="font-serif italic text-base text-[#262820]/75">
+              Curated wedding photographs and highlights will appear here soon.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {/* Lightbox Modal for Full-Screen Image Viewing */}

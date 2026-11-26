@@ -583,6 +583,8 @@ interface WeddingPhotoPuzzleSectionProps {
   puzzleImageUrl?: string;
   coupleNames: string;
   musicEnabled?: boolean;
+  songSuggestionsEnabled?: boolean;
+  puzzleSongRewardsEnabled?: boolean;
   availableSongs?: MusicTrack[];
   activeSongId?: string;
   onSelectSong?: (track: MusicTrack) => Promise<{ startedPlaying: boolean; respectPaused: boolean }>;
@@ -613,6 +615,8 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
   puzzleImageUrl,
   coupleNames,
   musicEnabled = true,
+  songSuggestionsEnabled = true,
+  puzzleSongRewardsEnabled = true,
   availableSongs = [],
   activeSongId = '',
   onSelectSong,
@@ -642,6 +646,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
   }, []);
 
   const handleSongSelectChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (!puzzleSongRewardsEnabled || !musicEnabled) return;
     const chosenId = e.target.value;
     const track = availableSongs.find((s) => s.id === chosenId);
     if (!track || !onSelectSong) return;
@@ -662,6 +667,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
 
   const handleSubmitSuggestion = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!songSuggestionsEnabled) return;
     setSuggestError(null);
     setSuggestSuccess(null);
 
@@ -756,7 +762,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
 
         {/* Session-Persisted Musical Reward — Unlocked ONLY after completing the puzzle */}
         <AnimatePresence>
-          {rewardUnlocked && (
+          {rewardUnlocked && (puzzleSongRewardsEnabled || songSuggestionsEnabled) && (
             <motion.div
               key="puzzle-music-reward"
               initial={{ opacity: 0, y: 12 }}
@@ -774,64 +780,73 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
                     data-typo="label"
                     className="text-xs uppercase tracking-[0.2em] text-[#737746] font-semibold"
                   >
-                    Puzzle Reward Unlocked
+                    {puzzleSongRewardsEnabled ? 'Puzzle Reward Unlocked' : 'Celebration Playlist'}
                   </p>
                   <h3
                     data-typo="subheading"
                     className="font-serif text-xl sm:text-2xl font-semibold text-[#07543E] leading-snug"
                   >
-                    You did it! 🎉 You&apos;ve unlocked a little musical treat. Choose the next song for our celebration!
+                    {puzzleSongRewardsEnabled
+                      ? "You did it! 🎉 You've unlocked a little musical treat. Choose the next song for our celebration!"
+                      : 'You did it! 🎉 Have a favourite song in mind for our celebration? Share a suggestion with us below.'}
                   </h3>
                 </div>
               </div>
 
-              {musicEnabled && enabledSongs.length > 0 ? (
-                <div className="space-y-3">
-                  <label
-                    htmlFor="puzzle-song-selector"
-                    data-typo="label"
-                    className="block text-xs font-semibold uppercase tracking-[0.16em] text-[#07543E]"
-                  >
-                    Select the Next Celebration Song
-                  </label>
-
-                  <select
-                    id="puzzle-song-selector"
-                    value={activeSongId}
-                    onChange={(e) => void handleSongSelectChange(e)}
-                    className="w-full px-4 py-3 min-h-[48px] rounded-xl border border-[#07543E]/25 bg-white text-sm sm:text-base font-medium text-[#262820] focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15 cursor-pointer"
-                  >
-                    {!enabledSongs.some((s) => s.id === activeSongId) && (
-                      <option value="">Choose a song from our celebration playlist...</option>
-                    )}
-                    {enabledSongs.map((song) => (
-                      <option key={song.id} value={song.id}>
-                        {song.title} — {song.artist}
-                      </option>
-                    ))}
-                  </select>
-
-                  {selectedNotice && (
-                    <p
-                      role="status"
-                      data-typo="caption"
-                      className="text-xs sm:text-sm text-[#07543E] bg-[#07543E]/8 border border-[#07543E]/15 rounded-lg px-3.5 py-2.5 flex items-center gap-2"
+              {puzzleSongRewardsEnabled && (
+                musicEnabled && enabledSongs.length > 0 ? (
+                  <div className="space-y-3">
+                    <label
+                      htmlFor="puzzle-song-selector"
+                      data-typo="label"
+                      className="block text-xs font-semibold uppercase tracking-[0.16em] text-[#07543E]"
                     >
-                      <CheckCircle2 className="w-4 h-4 text-[#C5A04A] shrink-0" />
-                      <span>{selectedNotice}</span>
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p data-typo="caption" className="text-sm text-[#262820]/75">
-                  {musicEnabled
-                    ? 'Our playlist tracks are being curated by the couple — you can still suggest a favourite song below!'
-                    : 'Background music is currently paused by the couple, but you can still suggest a song below!'}
-                </p>
+                      Select the Next Celebration Song
+                    </label>
+
+                    <select
+                      id="puzzle-song-selector"
+                      value={activeSongId}
+                      onChange={(e) => void handleSongSelectChange(e)}
+                      className="w-full px-4 py-3 min-h-[48px] rounded-xl border border-[#07543E]/25 bg-white text-sm sm:text-base font-medium text-[#262820] focus:outline-none focus:border-[#07543E] focus:ring-2 focus:ring-[#07543E]/15 cursor-pointer"
+                    >
+                      {!enabledSongs.some((s) => s.id === activeSongId) && (
+                        <option value="">Choose a song from our celebration playlist...</option>
+                      )}
+                      {enabledSongs.map((song) => (
+                        <option key={song.id} value={song.id}>
+                          {song.title} — {song.artist}
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedNotice && (
+                      <p
+                        role="status"
+                        data-typo="caption"
+                        className="text-xs sm:text-sm text-[#07543E] bg-[#07543E]/8 border border-[#07543E]/15 rounded-lg px-3.5 py-2.5 flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-[#C5A04A] shrink-0" />
+                        <span>{selectedNotice}</span>
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p data-typo="caption" className="text-sm text-[#262820]/75">
+                    {musicEnabled
+                      ? songSuggestionsEnabled
+                        ? 'Our playlist tracks are being curated by the couple — you can still suggest a favourite song below!'
+                        : 'Our celebration playlist tracks are currently being curated by the couple.'
+                      : songSuggestionsEnabled
+                      ? 'Background music is currently paused by the couple, but you can still suggest a song below!'
+                      : 'Background music is currently paused by the couple.'}
+                  </p>
+                )
               )}
 
               {/* Discreet Song Suggestion Trigger & Expandable Form */}
-              <div className="pt-3 border-t border-[#07543E]/12">
+              {songSuggestionsEnabled && (
+              <div className={puzzleSongRewardsEnabled ? 'pt-3 border-t border-[#07543E]/12' : ''}>
                 <button
                   type="button"
                   data-typo="button"
@@ -937,6 +952,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
                   </form>
                 )}
               </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

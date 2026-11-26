@@ -33,7 +33,8 @@ import {
   Music,
   Gift,
   Type,
-  Copy
+  Copy,
+  SlidersHorizontal
 } from 'lucide-react';
 import { WeddingPuzzleBoard } from './WeddingPhotoPuzzleSection';
 import { AdminMusicLibraryPanel } from './admin/AdminMusicLibraryPanel';
@@ -41,6 +42,7 @@ import { AdminGiftingPanel } from './admin/AdminGiftingPanel';
 import { AdminTypographyPanel } from './admin/AdminTypographyPanel';
 import { AdminSlideshowPanel } from './admin/AdminSlideshowPanel';
 import { AdminWebsiteImagesPanel } from './admin/AdminWebsiteImagesPanel';
+import { AdminVisibilityControlsPanel } from './admin/AdminVisibilityControlsPanel';
 import { User } from 'firebase/auth';
 import {
   signInAdminWithGoogle,
@@ -57,6 +59,7 @@ import {
   saveSiteContent,
   saveSlideshowSettings,
   saveWebsiteImagesSettings,
+  saveVisibilitySettings,
   listAllRsvps,
   updateRsvpRecord,
   deleteRsvpRecord,
@@ -95,8 +98,10 @@ import {
   MusicTrack,
   SongSuggestion,
   SlideshowSlideItem,
-  SectionImagesMap
+  SectionImagesMap,
+  VisibilitySettingsData
 } from '../types';
+import { countEnabledVisibilityControls } from '../utils/visibilitySettings';
 import {
   FILE_INPUT_ACCEPT,
   MAX_AUDIO_BYTES,
@@ -111,6 +116,7 @@ import {
 
 interface AdminDashboardProps {
   siteContent: SiteContentData;
+  visibilitySettings: VisibilitySettingsData;
   currentUser: User | null;
   isAuthorizedAdmin: boolean;
   authLoading: boolean;
@@ -119,6 +125,7 @@ interface AdminDashboardProps {
 
 type AdminTab =
   | 'overview'
+  | 'visibility'
   | 'content'
   | 'images'
   | 'music'
@@ -285,6 +292,7 @@ function resolveDisplayedDriveAuth(
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   siteContent,
+  visibilitySettings,
   currentUser,
   isAuthorizedAdmin,
   authLoading,
@@ -1205,6 +1213,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       >
         {[
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+          { id: 'visibility', label: 'Visibility Controls', icon: SlidersHorizontal },
           { id: 'content', label: 'Website Content', icon: FileEdit },
           { id: 'images', label: 'Website Images', icon: ImageIcon },
           {
@@ -1330,6 +1339,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <p className="text-xs text-[#262820]/70 mt-1">Awaiting couple approval</p>
             </div>
           </div>
+
+          {/* Public Visibility Status Strip */}
+          {(() => {
+            const visSummary = countEnabledVisibilityControls(visibilitySettings);
+            return (
+              <div className="p-4 sm:p-5 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <SlidersHorizontal className="w-5 h-5 text-[#07543E] mt-0.5 shrink-0" />
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-serif text-lg sm:text-xl font-semibold text-[#07543E]">
+                        Website Visibility &amp; Experience Controls
+                      </h2>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wider ${
+                          visibilitySettings.experience.mainWebsite
+                            ? 'bg-[#07543E]/10 text-[#07543E]'
+                            : 'bg-amber-100 text-amber-950'
+                        }`}
+                      >
+                        {visibilitySettings.experience.mainWebsite ? 'Public Site Live' : 'Maintenance Mode'}
+                      </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-[#262820]/70 mt-0.5">
+                      {visSummary.enabled} of {visSummary.total} visitor experiences, sections, and guest interactions are currently enabled.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('visibility')}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[42px] rounded-lg border border-[#07543E]/25 bg-white hover:bg-[#FAF7F0] text-xs font-semibold uppercase tracking-wider text-[#07543E] cursor-pointer shrink-0"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Manage Visibility</span>
+                </button>
+              </div>
+            );
+          })()}
 
           {/* Google Drive OAuth 2.0 Connection Panel */}
           <div className="p-5 sm:p-6 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-5">
@@ -2207,6 +2255,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
           </div>
         </form>
+      )}
+
+      {/* ====================================================================
+          TAB 1B: WEBSITE VISIBILITY & EXPERIENCE CONTROLS
+      ==================================================================== */}
+      {activeTab === 'visibility' && (
+        <AdminVisibilityControlsPanel
+          visibilitySettings={visibilitySettings}
+          siteContent={siteContent}
+          onSaveVisibilitySettings={saveVisibilitySettings}
+          onNotify={(type, text) => setBannerMessage({ type, text })}
+        />
       )}
 
       {/* ====================================================================

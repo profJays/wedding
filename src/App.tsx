@@ -7,6 +7,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { QuizScreen } from './components/QuizScreen';
 import { UninvitedScreen } from './components/UninvitedScreen';
 import { ApprovedScreen } from './components/ApprovedScreen';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { DressCodeModal } from './components/DressCodeModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Footer } from './components/Footer';
@@ -20,17 +21,39 @@ import { DEFAULT_SITE_CONTENT } from './data/weddingSite';
 import { subscribeToAuth } from './services/firebase';
 import {
   subscribeSiteContent,
+  subscribeVisibilitySettings,
   subscribeEnabledMusicTracks,
   checkCurrentUserIsAdmin
 } from './services/weddingRepository';
-import { AppView, AnswerOption, MusicTrack, SiteContentData } from './types';
+import {
+  DEFAULT_VISIBILITY_SETTINGS,
+  resolveInitialVisitorView,
+  resolveNextViewAfterInvitation,
+  resolveSafeViewForSettings
+} from './utils/visibilitySettings';
+import {
+  AppView,
+  AnswerOption,
+  MusicTrack,
+  SiteContentData,
+  VisibilitySettingsData
+} from './types';
 
 export default function App() {
+  const isInitialAdminHash =
+    typeof window !== 'undefined' && window.location.hash === '#admin';
+
   const [view, setView] = useState<AppView>(() =>
-    typeof window !== 'undefined' && window.location.hash === '#admin' ? 'admin' : 'invitation'
+    isInitialAdminHash ? 'admin' : 'invitation'
   );
   const [hasEnteredWebsite, setHasEnteredWebsite] = useState<boolean>(false);
   const [siteContent, setSiteContent] = useState<SiteContentData>(DEFAULT_SITE_CONTENT);
+  const [visibilitySettings, setVisibilitySettings] = useState<VisibilitySettingsData>(
+    DEFAULT_VISIBILITY_SETTINGS
+  );
+  const [visibilityReady, setVisibilityReady] = useState<boolean>(isInitialAdminHash);
+  const initialViewResolvedRef = useRef<boolean>(isInitialAdminHash);
+
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [guestName, setGuestName] = useState<string>('');
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -53,11 +76,65 @@ export default function App() {
     const unsubMusic = subscribeEnabledMusicTracks((tracks) => {
       setEnabledMusicTracks(tracks);
     });
+
+    // Brief fallback so slow/offline networks never block rendering
+    const readyFallbackTimer = window.setTimeout(() => {
+      setVisibilityReady(true);
+    }, 1500);
+
+    const unsubVisibility = subscribeVisibilitySettings(
+      (settings) => {
+        setVisibilitySettings(settings);
+        if (!initialViewResolvedRef.current) {
+          initialViewResolvedRef.current = true;
+          const initialHash =
+            typeof window !== 'undefined' ? window.location.hash : '';
+          const resolvedInitial = resolveInitialVisitorView(settings, initialHash);
+          setView(resolvedInitial);
+          if (resolvedInitial === 'website') {
+            setHasEnteredWebsite(true);
+          }
+        }
+      },
+      () => {
+        window.clearTimeout(readyFallbackTimer);
+        setVisibilityReady(true);
+      }
+    );
+
     return () => {
+      window.clearTimeout(readyFallbackTimer);
       unsubSite();
       unsubMusic();
+      unsubVisibility();
     };
   }, []);
+
+  // Keep active visitor views consistent whenever live visibility settings change
+  useEffect(() => {
+    if (!visibilityReady) return;
+    const safeView = resolveSafeViewForSettings(
+      view,
+      visibilitySettings,
+      hasEnteredWebsite
+    );
+    if (safeView !== view) {
+      setView(safeView);
+      if (safeView === 'website') {
+        setHasEnteredWebsite(true);
+      }
+    }
+  }, [visibilityReady, view, visibilitySettings, hasEnteredWebsite]);
+
+  // Combined effective feature toggles (preserving legacy siteContent toggles seamlessly)
+  const effectiveMusicEnabled =
+    siteContent.musicEnabled !== false &&
+    visibilitySettings.experience.backgroundMusic &&
+    visibilitySettings.experience.mainWebsite;
+  const effectivePuzzleEnabled =
+    siteContent.puzzleEnabled !== false && visibilitySettings.experience.photoPuzzle;
+  const effectiveGiftingEnabled =
+    siteContent.giftingEnabled !== false && visibilitySettings.sections.gifting;
 
   const effectiveSongs = useMemo<MusicTrack[]>(() => {
     const validTracks = enabledMusicTracks.filter(
@@ -125,6 +202,7 @@ export default function App() {
     const onHashChange = () => {
       if (window.location.hash === '#admin') {
         setView('admin');
+        setVisibilityReady(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     };
@@ -143,10 +221,18 @@ export default function App() {
 
   const handleNavigateSection = (sectionId: string) => {
     clearAdminHash();
+    if (!visibilitySettings.experience.mainWebsite) {
+      setView('maintenance');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     if (view !== 'website') {
       setHasEnteredWebsite(true);
       setView('website');
-      musicControllerRef.current?.attemptStartOnWebsiteEntry();
+      if (effectiveMusicEnabled) {
+        musicControllerRef.current?.attemptStartOnWebsiteEntry();
+      }
       let attempts = 0;
       const attemptScroll = () => {
         if (sectionId === 'top') {
@@ -180,30 +266,60 @@ export default function App() {
 
   const handleContinueFromInvitation = () => {
     clearAdminHash();
-    setView('welcome');
+    const nextView = resolveNextViewAfterInvitation(visibilitySettings);
+    if (nextView === 'website') {
+      setHasEnteredWebsite(true);
+      setView('website');
+      if (effectiveMusicEnabled) {
+        musicControllerRef.current?.attemptStartOnWebsiteEntry();
+      }
+    } else {
+      setView(nextView);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleExploreWebsite = () => {
     clearAdminHash();
+    if (!visibilitySettings.experience.mainWebsite) {
+      setView('maintenance');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     setHasEnteredWebsite(true);
     setView('website');
-    musicControllerRef.current?.attemptStartOnWebsiteEntry();
+    if (effectiveMusicEnabled) {
+      musicControllerRef.current?.attemptStartOnWebsiteEntry();
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Skips the challenge directly to the main wedding website without marking challenge passed or unlocking puzzle rewards
   const handleSkipChallenge = () => {
     clearAdminHash();
+    if (!visibilitySettings.experience.mainWebsite) {
+      setView('maintenance');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     setHasEnteredWebsite(true);
     setView('website');
-    musicControllerRef.current?.attemptStartOnWebsiteEntry();
+    if (effectiveMusicEnabled) {
+      musicControllerRef.current?.attemptStartOnWebsiteEntry();
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectRewardSong = async (
     track: MusicTrack
   ): Promise<{ startedPlaying: boolean; respectPaused: boolean }> => {
+    if (
+      !effectivePuzzleEnabled ||
+      !visibilitySettings.interactions.puzzleSongRewards ||
+      !effectiveMusicEnabled
+    ) {
+      return { startedPlaying: false, respectPaused: true };
+    }
     setSelectedSongId(track.id);
     if (!musicControllerRef.current) {
       return { startedPlaying: false, respectPaused: false };
@@ -212,6 +328,10 @@ export default function App() {
   };
 
   const handleStart = () => {
+    if (!visibilitySettings.experience.challenge) {
+      handleExploreWebsite();
+      return;
+    }
     setCurrentQuestionIndex(0);
     setView('quiz');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -276,12 +396,24 @@ export default function App() {
 
   const handleGoInvitation = () => {
     clearAdminHash();
+    if (!visibilitySettings.experience.mainWebsite) {
+      setView('maintenance');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!visibilitySettings.experience.digitalInvitation) return;
     setView('invitation');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleGoChallenge = () => {
     clearAdminHash();
+    if (!visibilitySettings.experience.mainWebsite) {
+      setView('maintenance');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!visibilitySettings.experience.challenge) return;
     setView(isChallengePassed ? 'approved' : 'welcome');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -290,26 +422,44 @@ export default function App() {
     if (typeof window !== 'undefined') {
       window.location.hash = 'admin';
     }
+    setVisibilityReady(true);
     setView('admin');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#262820] selection:bg-[#07543E]/20 selection:text-[#07543E]">
-      {view === 'invitation' ? (
+      {!visibilityReady && view !== 'admin' ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading celebration website"
+          className="min-h-screen w-full bg-[#FAF7F0] flex items-center justify-center"
+        >
+          <div className="w-8 h-8 rounded-full border-2 border-[#07543E]/20 border-t-[#07543E] animate-spin" />
+        </div>
+      ) : view === 'maintenance' ? (
+        <MaintenanceScreen
+          coupleNames={siteContent.coupleNames}
+          hashtag={siteContent.hashtag}
+          weddingDateDisplay={siteContent.weddingDateDisplay}
+          onGoAdmin={handleGoAdmin}
+        />
+      ) : view === 'invitation' ? (
         <InvitationScreen
           onContinue={handleContinueFromInvitation}
           onExploreWebsite={handleExploreWebsite}
           canReturnToWebsite={hasEnteredWebsite}
+          challengeEnabled={visibilitySettings.experience.challenge}
         />
       ) : (
         <>
           <Header
             coupleNames={siteContent.coupleNames}
             activeView={view}
-            puzzleEnabled={siteContent.puzzleEnabled !== false}
-            giftingEnabled={siteContent.giftingEnabled !== false}
-            showMusicToggle={siteContent.musicEnabled !== false && view !== 'admin'}
+            puzzleEnabled={effectivePuzzleEnabled}
+            giftingEnabled={effectiveGiftingEnabled}
+            visibilitySettings={visibilitySettings}
+            showMusicToggle={effectiveMusicEnabled && view !== 'admin'}
             isMusicPlaying={isMusicPlaying}
             hasMusicTrack={Boolean(isPlayableMusicUrl(activeAudioUrl))}
             onToggleMusic={() => {
@@ -320,91 +470,94 @@ export default function App() {
             onGoChallenge={handleGoChallenge}
           />
 
-      {view === 'website' ? (
-        <main className="flex-1 w-full">
-          <WeddingWebsite
-            siteContent={siteContent}
-            guestName={guestName}
-            isChallengePassed={isChallengePassed}
-            availableSongs={effectiveSongs}
-            activeSongId={resolvedActiveSongId}
-            onSelectSong={handleSelectRewardSong}
-            onGoInvitation={handleGoInvitation}
-            onGoChallenge={handleGoChallenge}
-            onOpenDressCode={() => setIsFaqOpen(true)}
+          {view === 'website' ? (
+            <main className="flex-1 w-full">
+              <WeddingWebsite
+                siteContent={siteContent}
+                visibilitySettings={visibilitySettings}
+                guestName={guestName}
+                isChallengePassed={isChallengePassed}
+                availableSongs={effectiveSongs}
+                activeSongId={resolvedActiveSongId}
+                onSelectSong={handleSelectRewardSong}
+                onGoInvitation={handleGoInvitation}
+                onGoChallenge={handleGoChallenge}
+                onOpenDressCode={() => setIsFaqOpen(true)}
+              />
+            </main>
+          ) : view === 'admin' ? (
+            <main className="flex-1 w-full bg-[#FAF7F0]">
+              <AdminDashboard
+                siteContent={siteContent}
+                visibilitySettings={visibilitySettings}
+                currentUser={currentUser}
+                isAuthorizedAdmin={isAuthorizedAdmin}
+                authLoading={authLoading}
+                onReturnToWebsite={handleExploreWebsite}
+              />
+            </main>
+          ) : (
+            <main className="flex-1 flex items-center justify-center py-6 sm:py-10">
+              {view === 'welcome' && (
+                <WelcomeScreen
+                  guestName={guestName}
+                  onGuestNameChange={setGuestName}
+                  onStart={handleStart}
+                  onSkipChallenge={handleSkipChallenge}
+                  onReturnToWebsite={handleExploreWebsite}
+                  canReturnToWebsite={hasEnteredWebsite}
+                />
+              )}
+
+              {view === 'quiz' && (
+                <QuizScreen
+                  currentQuestion={currentQuestion}
+                  currentIndex={currentQuestionIndex}
+                  totalQuestions={WEDDING_QUESTIONS.length}
+                  selectedOptionId={selectedOptionId}
+                  onSelectOption={handleSelectOption}
+                  onNext={handleNext}
+                  onBack={handleBack}
+                  canGoBack={currentQuestionIndex > 0}
+                  onSkipChallenge={handleSkipChallenge}
+                  onReturnToWebsite={handleExploreWebsite}
+                  canReturnToWebsite={hasEnteredWebsite}
+                />
+              )}
+
+              {view === 'uninvited' && (
+                <UninvitedScreen
+                  guestName={guestName}
+                  onTryAgain={handleTryAgain}
+                  onReturnToWebsite={handleExploreWebsite}
+                  canReturnToWebsite={hasEnteredWebsite}
+                />
+              )}
+
+              {view === 'approved' && (
+                <ApprovedScreen
+                  guestName={guestName}
+                  answers={answers}
+                  onPlayAgain={handlePlayAgain}
+                  onExploreWebsite={handleExploreWebsite}
+                />
+              )}
+            </main>
+          )}
+
+          <DressCodeModal
+            isOpen={isFaqOpen}
+            onClose={() => setIsFaqOpen(false)}
           />
-        </main>
-      ) : view === 'admin' ? (
-        <main className="flex-1 w-full bg-[#FAF7F0]">
-          <AdminDashboard
-            siteContent={siteContent}
-            currentUser={currentUser}
-            isAuthorizedAdmin={isAuthorizedAdmin}
-            authLoading={authLoading}
-            onReturnToWebsite={handleExploreWebsite}
-          />
-        </main>
-      ) : (
-        <main className="flex-1 flex items-center justify-center py-6 sm:py-10">
-          {view === 'welcome' && (
-            <WelcomeScreen
-              guestName={guestName}
-              onGuestNameChange={setGuestName}
-              onStart={handleStart}
-              onSkipChallenge={handleSkipChallenge}
-              onReturnToWebsite={handleExploreWebsite}
-              canReturnToWebsite={hasEnteredWebsite}
-            />
-          )}
-
-          {view === 'quiz' && (
-            <QuizScreen
-              currentQuestion={currentQuestion}
-              currentIndex={currentQuestionIndex}
-              totalQuestions={WEDDING_QUESTIONS.length}
-              selectedOptionId={selectedOptionId}
-              onSelectOption={handleSelectOption}
-              onNext={handleNext}
-              onBack={handleBack}
-              canGoBack={currentQuestionIndex > 0}
-              onSkipChallenge={handleSkipChallenge}
-              onReturnToWebsite={handleExploreWebsite}
-              canReturnToWebsite={hasEnteredWebsite}
-            />
-          )}
-
-          {view === 'uninvited' && (
-            <UninvitedScreen
-              guestName={guestName}
-              onTryAgain={handleTryAgain}
-              onReturnToWebsite={handleExploreWebsite}
-              canReturnToWebsite={hasEnteredWebsite}
-            />
-          )}
-
-          {view === 'approved' && (
-            <ApprovedScreen
-              guestName={guestName}
-              answers={answers}
-              onPlayAgain={handlePlayAgain}
-              onExploreWebsite={handleExploreWebsite}
-            />
-          )}
-        </main>
-      )}
-
-      <DressCodeModal
-        isOpen={isFaqOpen}
-        onClose={() => setIsFaqOpen(false)}
-      />
 
           <Footer
             coupleNames={siteContent.coupleNames}
             hashtag={siteContent.hashtag}
             weddingDateDisplay={siteContent.weddingDateDisplay}
             footerNote={siteContent.footerNote}
-            puzzleEnabled={siteContent.puzzleEnabled !== false}
-            giftingEnabled={siteContent.giftingEnabled !== false}
+            puzzleEnabled={effectivePuzzleEnabled}
+            giftingEnabled={effectiveGiftingEnabled}
+            visibilitySettings={visibilitySettings}
             typography={siteContent.sectionTypography?.footer}
             onNavigateSection={handleNavigateSection}
             onGoInvitation={handleGoInvitation}
@@ -416,7 +569,7 @@ export default function App() {
 
       <BackgroundMusicPlayer
         ref={musicControllerRef}
-        enabled={siteContent.musicEnabled !== false}
+        enabled={effectiveMusicEnabled}
         audioUrl={activeAudioUrl}
         isWebsiteView={view === 'website'}
         onPlayingChange={setIsMusicPlaying}
@@ -424,3 +577,4 @@ export default function App() {
     </div>
   );
 }
+

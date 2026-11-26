@@ -20,7 +20,40 @@ export type AppView =
   | 'quiz'
   | 'uninvited'
   | 'approved'
+  | 'maintenance'
   | 'admin';
+
+export interface VisibilityExperienceControls {
+  digitalInvitation: boolean;
+  challenge: boolean;
+  photoPuzzle: boolean;
+  backgroundMusic: boolean;
+  mainWebsite: boolean;
+}
+
+export interface VisibilitySectionControls {
+  welcome: boolean;
+  ourStory: boolean;
+  schedule: boolean;
+  gifting: boolean;
+  qa: boolean;
+  rsvp: boolean;
+  gallery: boolean;
+}
+
+export interface VisibilityInteractionControls {
+  guestUploads: boolean;
+  songSuggestions: boolean;
+  puzzleSongRewards: boolean;
+}
+
+export interface VisibilitySettingsData {
+  experience: VisibilityExperienceControls;
+  sections: VisibilitySectionControls;
+  interactions: VisibilityInteractionControls;
+  updatedAt?: string;
+  updatedByUid?: string;
+}
 
 export interface CoupleQAItem {
   id: string;
@@ -343,6 +376,7 @@ export interface DriveTestConnectionResponse {
 
 export interface GalleryServerStatus {
   isUnlocked: boolean;
+  guestUploadsEnabled?: boolean;
   serverTimeMs: number;
   serverTimeLagosFormatted: string;
   unlockAtISO: string;
@@ -370,6 +404,7 @@ export type UploadErrorCode =
   | 'AUDIO_TOO_LARGE'
   | 'TOO_MANY_FILES'
   | 'GALLERY_LOCKED'
+  | 'GUEST_UPLOADS_DISABLED'
   | 'DRIVE_NOT_CONFIGURED'
   | 'DRIVE_AUTH_MISSING'
   | 'DRIVE_AUTH_EXPIRED'

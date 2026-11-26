@@ -17,7 +17,8 @@ import {
   AUTHORITATIVE_QA_INTRO,
   WEDDING_PHOTOS
 } from '../data/weddingSite';
-import { MusicTrack, SiteContentData } from '../types';
+import { MusicTrack, SiteContentData, VisibilitySettingsData } from '../types';
+import { DEFAULT_VISIBILITY_SETTINGS } from '../utils/visibilitySettings';
 import { Crest } from './Crest';
 import { RsvpSection } from './RsvpSection';
 import { GallerySection } from './GallerySection';
@@ -40,6 +41,7 @@ import {
 
 interface WeddingWebsiteProps {
   siteContent: SiteContentData;
+  visibilitySettings?: VisibilitySettingsData;
   guestName: string;
   isChallengePassed: boolean;
   availableSongs: MusicTrack[];
@@ -124,6 +126,7 @@ const EditorialPhoto: React.FC<EditorialPhotoProps> = ({
 
 export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
   siteContent,
+  visibilitySettings = DEFAULT_VISIBILITY_SETTINGS,
   guestName,
   isChallengePassed,
   availableSongs,
@@ -133,6 +136,24 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
   onGoChallenge,
   onOpenDressCode
 }) => {
+  const { experience, sections, interactions } = visibilitySettings;
+  const showPuzzleSection = siteContent.puzzleEnabled !== false && experience.photoPuzzle;
+  const showGiftingSection = siteContent.giftingEnabled !== false && sections.gifting;
+  const showBottomExperienceBand = experience.digitalInvitation || experience.challenge;
+  const effectiveMusicEnabled =
+    siteContent.musicEnabled !== false && experience.backgroundMusic;
+  const hasAnyVisibleSection = Boolean(
+    sections.welcome ||
+      sections.ourStory ||
+      sections.schedule ||
+      showPuzzleSection ||
+      showGiftingSection ||
+      sections.qa ||
+      sections.rsvp ||
+      sections.gallery ||
+      showBottomExperienceBand
+  );
+
   const welcomeTypoProps = getSectionTypographyProps('welcome', siteContent.sectionTypography?.welcome);
   const storyTypoProps = getSectionTypographyProps('story', siteContent.sectionTypography?.story);
   const scheduleTypoProps = getSectionTypographyProps('schedule', siteContent.sectionTypography?.schedule);
@@ -236,6 +257,22 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
 
   return (
     <div id="top" className="w-full bg-[#FAF7F0] text-[#262820]">
+      {!hasAnyVisibleSection && (
+        <section className="py-24 px-4 sm:px-6 text-center">
+          <div className="max-w-xl mx-auto p-8 sm:p-12 rounded-2xl bg-[#FFFDF8] border border-[#C5A04A]/40">
+            <div className="flex justify-center mb-4">
+              <Crest size="md" />
+            </div>
+            <h1 className="font-serif text-3xl sm:text-4xl font-semibold text-[#07543E] mb-3">
+              {siteContent.coupleNames}
+            </h1>
+            <p className="font-serif italic text-base sm:text-lg text-[#262820]/80 leading-relaxed">
+              Our celebration details are currently being updated. Please check back shortly.
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* ====================================================================
           1. HERO SECTION (Face-Protected Editorial Portrait & Lower Scrim)
           - Mobile & Tablet (< lg): Clean unobstructed couple photograph above
@@ -244,6 +281,8 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
             emerald gradient and compact lower horizontal editorial strip leaving
             the upper portrait zone completely clear.
       ==================================================================== */}
+      {sections.welcome && (
+      <>
       <section className="relative w-full overflow-hidden bg-[#073B2B] lg:min-h-[max(600px,min(84vh,780px))] xl:min-h-[max(620px,min(86vh,860px))] lg:flex lg:flex-col lg:justify-end">
         {/* Photograph Stage: standalone unobstructed portrait frame on mobile & tablet, full-bleed backdrop on lg+ */}
         <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] md:aspect-[16/9] lg:aspect-auto lg:absolute lg:inset-0 overflow-hidden bg-[#073B2B]">
@@ -342,39 +381,49 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
                 )}
 
                 {/* Hero Action Controls */}
-                <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-end gap-2.5 sm:gap-2.5 xl:gap-3">
-                  <button
-                    type="button"
-                    onClick={() => scrollToSection('rsvp')}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 xl:px-6 py-2.5 min-h-[44px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-[13px] font-bold uppercase tracking-[0.15em] transition-colors shadow-md cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <span>RSVP Now</span>
-                  </button>
+                {(sections.rsvp || experience.challenge || experience.digitalInvitation) && (
+                  <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-end gap-2.5 sm:gap-2.5 xl:gap-3">
+                    {sections.rsvp && (
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection('rsvp')}
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 xl:px-6 py-2.5 min-h-[44px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-[13px] font-bold uppercase tracking-[0.15em] transition-colors shadow-md cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <span>RSVP Now</span>
+                      </button>
+                    )}
 
-                  <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-2.5 xl:gap-3 min-w-0">
-                    <button
-                      type="button"
-                      onClick={onGoChallenge}
-                      className="flex-1 sm:flex-initial min-w-0 max-w-full sm:max-w-[235px] inline-flex items-center justify-center gap-1.5 px-4 xl:px-5 py-2.5 min-h-[44px] rounded-xl bg-[#07543E]/85 hover:bg-[#07543E] text-white border border-[#C5A04A]/50 text-xs sm:text-[13px] font-semibold uppercase tracking-[0.11em] backdrop-blur-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-[#F3E5AB] shrink-0" />
-                      <span className="truncate">
-                        {isChallengePassed
-                          ? `View Pass (${guestName.trim() || 'Cleared'})`
-                          : `${siteContent.hashtag} Challenge`}
-                      </span>
-                    </button>
+                    {(experience.challenge || experience.digitalInvitation) && (
+                      <div className="flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-2.5 xl:gap-3 min-w-0">
+                        {experience.challenge && (
+                          <button
+                            type="button"
+                            onClick={onGoChallenge}
+                            className="flex-1 sm:flex-initial min-w-0 max-w-full sm:max-w-[235px] inline-flex items-center justify-center gap-1.5 px-4 xl:px-5 py-2.5 min-h-[44px] rounded-xl bg-[#07543E]/85 hover:bg-[#07543E] text-white border border-[#C5A04A]/50 text-xs sm:text-[13px] font-semibold uppercase tracking-[0.11em] backdrop-blur-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-[#F3E5AB] shrink-0" />
+                            <span className="truncate">
+                              {isChallengePassed
+                                ? `View Pass (${guestName.trim() || 'Cleared'})`
+                                : `${siteContent.hashtag} Challenge`}
+                            </span>
+                          </button>
+                        )}
 
-                    <button
-                      type="button"
-                      onClick={onGoInvitation}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] text-xs sm:text-[13px] font-medium tracking-[0.1em] uppercase text-[#F3E5AB] hover:text-white underline underline-offset-8 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                    >
-                      <MailOpen className="w-3.5 h-3.5 shrink-0" />
-                      <span>Digital Invite</span>
-                    </button>
+                        {experience.digitalInvitation && (
+                          <button
+                            type="button"
+                            onClick={onGoInvitation}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] text-xs sm:text-[13px] font-medium tracking-[0.1em] uppercase text-[#F3E5AB] hover:text-white underline underline-offset-8 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                          >
+                            <MailOpen className="w-3.5 h-3.5 shrink-0" />
+                            <span>Digital Invite</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -436,10 +485,13 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           <div className="mt-10 h-[1px] w-24 mx-auto bg-gradient-to-r from-transparent via-[#C5A04A] to-transparent" />
         </div>
       </section>
+      </>
+      )}
 
       {/* ====================================================================
           3. OUR STORY + COUPLE Q&AS (Soft Cream #F2EBDD)
       ==================================================================== */}
+      {sections.ourStory && (
       <section
         id="story"
         {...storyTypoProps}
@@ -592,10 +644,12 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           )}
         </div>
       </section>
+      )}
 
       {/* ====================================================================
           4. SCHEDULE SECTION (Ivory #FAF7F0 — Chronological Day Grouping)
       ==================================================================== */}
+      {sections.schedule && (
       <section
         id="schedule"
         {...scheduleTypoProps}
@@ -827,15 +881,18 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           </div>
         </div>
       </section>
+      )}
 
       {/* ====================================================================
           4B. INTERACTIVE 3×3 WEDDING PHOTO PUZZLE (Optional Admin Toggle)
       ==================================================================== */}
-      {siteContent.puzzleEnabled !== false && (
+      {showPuzzleSection && (
         <WeddingPhotoPuzzleSection
           puzzleImageUrl={puzzleImage.fileUrl}
           coupleNames={siteContent.coupleNames}
-          musicEnabled={siteContent.musicEnabled !== false}
+          musicEnabled={effectiveMusicEnabled}
+          songSuggestionsEnabled={interactions.songSuggestions}
+          puzzleSongRewardsEnabled={interactions.puzzleSongRewards}
           availableSongs={availableSongs}
           activeSongId={activeSongId}
           onSelectSong={onSelectSong}
@@ -846,7 +903,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       {/* ====================================================================
           4C. GIFTING & SUPPORT SECTION (Immediately After Puzzle, Before Q&A)
       ==================================================================== */}
-      {siteContent.giftingEnabled !== false && (
+      {showGiftingSection && (
         <GiftingSection
           heading={siteContent.giftingHeading || 'Gifting & Support'}
           intro={
@@ -864,6 +921,7 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       {/* ====================================================================
           5. GUEST Q&A SECTION (Soft Cream #F2EBDD)
       ==================================================================== */}
+      {sections.qa && (
       <section
         id="faq"
         {...faqTypoProps}
@@ -980,70 +1038,88 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
           </div>
         </div>
       </section>
+      )}
 
       {/* ====================================================================
           6. LIVE RSVP SECTION (Ivory #FAF7F0 — Real Firestore Submission)
       ==================================================================== */}
-      <RsvpSection
-        coupleNames={siteContent.coupleNames}
-        rsvpOpen={siteContent.rsvpOpen}
-        maxGuestsPerRsvp={siteContent.maxGuestsPerRsvp}
-        contactName={siteContent.contactName}
-        contactPhone={siteContent.contactPhone}
-        typography={siteContent.sectionTypography?.rsvp}
-      />
+      {sections.rsvp && (
+        <RsvpSection
+          coupleNames={siteContent.coupleNames}
+          rsvpOpen={siteContent.rsvpOpen && sections.rsvp}
+          maxGuestsPerRsvp={siteContent.maxGuestsPerRsvp}
+          contactName={siteContent.contactName}
+          contactPhone={siteContent.contactPhone}
+          typography={siteContent.sectionTypography?.rsvp}
+        />
+      )}
 
       {/* ====================================================================
           7. WEDDING HIGHLIGHTS SLIDESHOW + SERVER-LOCKED GUEST GALLERY
       ==================================================================== */}
-      <GallerySection
-        galleryPublicEnabled={siteContent.galleryPublicEnabled}
-        galleryUnlockISO={siteContent.galleryUnlockISO}
-        coupleNames={siteContent.coupleNames}
-        slideshowItems={siteContent.slideshowItems}
-        slideshowAutoplay={siteContent.slideshowAutoplay}
-        slideshowIntervalMs={siteContent.slideshowIntervalMs}
-        typography={siteContent.sectionTypography?.gallery}
-      />
+      {sections.gallery && (
+        <GallerySection
+          galleryPublicEnabled={siteContent.galleryPublicEnabled}
+          galleryUnlockISO={siteContent.galleryUnlockISO}
+          guestUploadsEnabled={interactions.guestUploads}
+          coupleNames={siteContent.coupleNames}
+          slideshowItems={siteContent.slideshowItems}
+          slideshowAutoplay={siteContent.slideshowAutoplay}
+          slideshowIntervalMs={siteContent.slideshowIntervalMs}
+          typography={siteContent.sectionTypography?.gallery}
+        />
+      )}
 
       {/* ====================================================================
           8. INTERACTIVE INVITATION & WEDDING CHALLENGE EXPERIENCE
       ==================================================================== */}
-      <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[#073B2B] text-[#FAF7F0]">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-xs sm:text-sm uppercase tracking-[0.24em] text-[#F3E5AB] font-semibold mb-3">
-            {siteContent.hashtag} · Guest Experience
-          </p>
+      {showBottomExperienceBand && (
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[#073B2B] text-[#FAF7F0]">
+          <div className="max-w-4xl mx-auto text-center">
+            <p className="text-xs sm:text-sm uppercase tracking-[0.24em] text-[#F3E5AB] font-semibold mb-3">
+              {siteContent.hashtag} · Guest Experience
+            </p>
 
-          <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-white text-balance leading-tight mb-4">
-            Unseal Our Digital Invitation
-          </h2>
+            <h2 className="font-serif text-[34px] sm:text-5xl font-semibold text-white text-balance leading-tight mb-4">
+              {experience.digitalInvitation
+                ? 'Unseal Our Digital Invitation'
+                : 'Take the Wedding Guest Challenge'}
+            </h2>
 
-          <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/85 max-w-2xl mx-auto mb-8 leading-relaxed">
-            Open our emerald &amp; gold wax-sealed digital invitation and take our playful 5-question Wedding Challenge to claim your official {siteContent.hashtag} guest pass.
-          </p>
+            <p className="font-serif italic text-base sm:text-xl text-[#FAF7F0]/85 max-w-2xl mx-auto mb-8 leading-relaxed">
+              {experience.digitalInvitation && experience.challenge
+                ? `Open our emerald & gold wax-sealed digital invitation and take our playful 5-question Wedding Challenge to claim your official ${siteContent.hashtag} guest pass.`
+                : experience.digitalInvitation
+                ? 'Open our emerald & gold wax-sealed digital invitation created especially for our celebration.'
+                : `Take our playful 5-question Wedding Challenge to claim your official ${siteContent.hashtag} guest pass.`}
+            </p>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3.5 sm:gap-4 max-w-sm sm:max-w-none mx-auto">
-            <button
-              type="button"
-              onClick={onGoInvitation}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[48px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.14em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <MailOpen className="w-4 h-4" />
-              <span>Open Digital Invitation</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3.5 sm:gap-4 max-w-sm sm:max-w-none mx-auto">
+              {experience.digitalInvitation && (
+                <button
+                  type="button"
+                  onClick={onGoInvitation}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 min-h-[48px] rounded-xl bg-[#C5A04A] hover:bg-[#D4B05B] text-[#073B2B] text-xs sm:text-sm font-bold uppercase tracking-[0.14em] transition-colors shadow-lg cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <MailOpen className="w-4 h-4" />
+                  <span>Open Digital Invitation</span>
+                </button>
+              )}
 
-            <button
-              type="button"
-              onClick={onGoChallenge}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl border border-[#F3E5AB]/50 hover:bg-white/10 text-white text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Heart className="w-4 h-4 text-[#F3E5AB]" />
-              <span>Play Wedding Challenge</span>
-            </button>
+              {experience.challenge && (
+                <button
+                  type="button"
+                  onClick={onGoChallenge}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 min-h-[48px] rounded-xl border border-[#F3E5AB]/50 hover:bg-white/10 text-white text-xs sm:text-sm font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Heart className="w-4 h-4 text-[#F3E5AB]" />
+                  <span>Play Wedding Challenge</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 };
