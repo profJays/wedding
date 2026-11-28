@@ -75,6 +75,13 @@ interface Ga4ErrorDetail {
 
 interface Ga4ReportResponse {
   rows?: Ga4Row[];
+  rowCount?: number;
+  metadata?: {
+    currencyCode?: string;
+    timeZone?: string;
+    subjectToThresholding?: boolean;
+    dataLossFromOtherRow?: boolean;
+  };
   error?: {
     code?: number;
     status?: string;
@@ -523,11 +530,67 @@ async function runGa4Endpoint(
   return json;
 }
 
-function numVal(row: Ga4Row | undefined, metricIndex: number): number {
-  const raw = row?.metricValues?.[metricIndex]?.value;
-  if (raw === undefined || raw === null || raw === '') return 0;
+function optionalNumVal(row: Ga4Row | undefined, metricIndex: number): number | null {
+  if (!row || !Array.isArray(row.metricValues)) return null;
+  const raw = row.metricValues[metricIndex]?.value;
+  if (raw === undefined || raw === null || raw === '') return null;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numVal(row: Ga4Row | undefined, metricIndex: number): number {
+  return optionalNumVal(row, metricIndex) ?? 0;
+}
+
+function formatDateInTimeZone(date: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function resolveDateRangeApplied(
+  range: AnalyticsDateRange,
+  timeZone: string
+): {
+  startDate: string;
+  endDate: string;
+  resolvedStartDate: string;
+  resolvedEndDate: string;
+} {
+  const spec = getDateRangeSpec(range);
+  const now = new Date();
+  const todayStr = formatDateInTimeZone(now, timeZone);
+
+  const shiftDays = (daysBack: number): string => {
+    const base = new Date(`${todayStr}T12:00:00Z`);
+    base.setUTCDate(base.getUTCDate() - daysBack);
+    return base.toISOString().slice(0, 10);
+  };
+
+  let resolvedStartDate = todayStr;
+  if (range === 'today') {
+    resolvedStartDate = todayStr;
+  } else if (range === '7d') {
+    resolvedStartDate = shiftDays(6);
+  } else if (range === '30d') {
+    resolvedStartDate = shiftDays(29);
+  } else {
+    resolvedStartDate = spec.startDate;
+  }
+
+  return {
+    startDate: spec.startDate,
+    endDate: spec.endDate,
+    resolvedStartDate,
+    resolvedEndDate: todayStr
+  };
 }
 
 function dimVal(row: Ga4Row | undefined, dimIndex: number, fallback = '(not set)'): string {
@@ -614,7 +677,9 @@ function buildEmptySections(): AnalyticsSectionMetric[] {
   }));
 }
 
-function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
+function buildEmptyWeddingExperience(
+  noteOverride?: string
+): AnalyticsWeddingExperienceMetric[] {
   return [
     {
       key: 'digital_invitation',
@@ -624,7 +689,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Tracks wax-seal opens and entry button clicks'
+      detailNote: noteOverride || 'Tracks wax-seal opens and entry button clicks'
     },
     {
       key: 'wedding_challenge',
@@ -634,7 +699,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Started vs passed (approved) vs uninvited outcome'
+      detailNote: noteOverride || 'Started vs passed (approved) vs uninvited outcome'
     },
     {
       key: 'photo_puzzle',
@@ -644,7 +709,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Tracks starts, total tile moves, and completions'
+      detailNote: noteOverride || 'Tracks starts, total tile moves, and completions'
     },
     {
       key: 'puzzle_song_reward',
@@ -654,7 +719,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Songs selected from the post-puzzle reward player'
+      detailNote: noteOverride || 'Songs selected from the post-puzzle reward player'
     },
     {
       key: 'song_suggestions',
@@ -664,7 +729,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Successful submissions vs validation or network failures'
+      detailNote: noteOverride || 'Successful submissions vs validation or network failures'
     },
     {
       key: 'gifting',
@@ -674,7 +739,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Section views vs successful clipboard copies'
+      detailNote: noteOverride || 'Section views vs successful clipboard copies'
     },
     {
       key: 'rsvp',
@@ -684,7 +749,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Form opens vs confirmed submissions vs failed attempts'
+      detailNote: noteOverride || 'Form opens vs confirmed submissions vs failed attempts'
     },
     {
       key: 'gallery_uploads',
@@ -694,7 +759,7 @@ function buildEmptyWeddingExperience(): AnalyticsWeddingExperienceMetric[] {
       completed: null,
       failed: null,
       totalEvents: null,
-      detailNote: 'Upload batches initiated vs completed vs failed'
+      detailNote: noteOverride || 'Upload batches initiated vs completed vs failed'
     }
   ];
 }
@@ -705,6 +770,12 @@ function buildUnavailableReport(
 ): AnalyticsReportData {
   return {
     available: false,
+    dataState: 'unavailable',
+    dataStateMessage: status.errorMessage,
+    propertyTimeZone: null,
+    dateRangeApplied: null,
+    hasIntradayLag: false,
+    realtimeSummary: null,
     range,
     fetchedAt: new Date().toISOString(),
     cached: false,
@@ -925,7 +996,11 @@ export async function fetchAnalyticsRealtimeReport(forceRefresh = false): Promis
           'runRealtimeReport',
           {
             minuteRanges: [{ name: 'last30m', startMinutesAgo: 29, endMinutesAgo: 0 }],
-            metrics: [{ name: 'activeUsers' }]
+            metrics: [
+              { name: 'activeUsers' },
+              { name: 'screenPageViews' },
+              { name: 'eventCount' }
+            ]
           },
           accessToken,
           projectId
@@ -985,6 +1060,8 @@ export async function fetchAnalyticsRealtimeReport(forceRefresh = false): Promis
 
     const activeUsersNow = numVal(activeNowRes.rows?.[0], 0);
     const activeUsersLast30Min = numVal(active30mRes.rows?.[0], 0);
+    const pageViewsLast30Min = numVal(active30mRes.rows?.[0], 1);
+    const eventsLast30Min = numVal(active30mRes.rows?.[0], 2);
 
     const recentEvents: AnalyticsRealtimeEventItem[] = (eventsRes.rows || []).map((row) => {
       const eventName = dimVal(row, 0, 'unknown_event');
@@ -1018,6 +1095,8 @@ export async function fetchAnalyticsRealtimeReport(forceRefresh = false): Promis
       fetchedAt: new Date().toISOString(),
       activeUsersNow,
       activeUsersLast30Min,
+      pageViewsLast30Min,
+      eventsLast30Min,
       recentEvents,
       activePages,
       locations,
@@ -1036,6 +1115,8 @@ export async function fetchAnalyticsRealtimeReport(forceRefresh = false): Promis
       fetchedAt: new Date().toISOString(),
       activeUsersNow: null,
       activeUsersLast30Min: null,
+      pageViewsLast30Min: null,
+      eventsLast30Min: null,
       recentEvents: [],
       activePages: [],
       locations: [],
@@ -1270,19 +1351,126 @@ export async function fetchAnalyticsDashboardReport(
       eventStatusCounts = null;
     }
 
-    // Parse overview
+    // Lightweight Realtime 30m check (reuses fresh cache when available) to distinguish
+    // GA4 intraday/standard report processing delay from genuine zero activity.
+    let realtimeSummary: {
+      activeUsers30m: number;
+      pageViews30m: number;
+      events30m: number;
+    } | null = null;
+    if (realtimeCache && Date.now() < realtimeCache.expiresAtMs && realtimeCache.value.available) {
+      realtimeSummary = {
+        activeUsers30m: realtimeCache.value.activeUsersLast30Min ?? 0,
+        pageViews30m: realtimeCache.value.pageViewsLast30Min ?? 0,
+        events30m: realtimeCache.value.eventsLast30Min ?? 0
+      };
+    } else {
+      try {
+        const rtCheck = await runGa4Endpoint(
+          propertyId,
+          'runRealtimeReport',
+          {
+            minuteRanges: [{ name: 'last30m', startMinutesAgo: 29, endMinutesAgo: 0 }],
+            metrics: [
+              { name: 'activeUsers' },
+              { name: 'screenPageViews' },
+              { name: 'eventCount' }
+            ]
+          },
+          accessToken,
+          projectId
+        );
+        realtimeSummary = {
+          activeUsers30m: numVal(rtCheck.rows?.[0], 0),
+          pageViews30m: numVal(rtCheck.rows?.[0], 1),
+          events30m: numVal(rtCheck.rows?.[0], 2)
+        };
+      } catch {
+        realtimeSummary = null;
+      }
+    }
+
+    const propertyTimeZone =
+      overviewRes.metadata?.timeZone || dailyRes.metadata?.timeZone || 'Africa/Lagos';
+    const dateRangeApplied = resolveDateRangeApplied(range, propertyTimeZone);
+
+    const hasStandardRows =
+      (overviewRes.rows?.length ?? 0) > 0 ||
+      (dailyRes.rows?.length ?? 0) > 0 ||
+      (eventsRes.rows?.length ?? 0) > 0;
+
+    const realtimeHasActivity = Boolean(
+      realtimeSummary &&
+        (realtimeSummary.activeUsers30m > 0 ||
+          realtimeSummary.pageViews30m > 0 ||
+          realtimeSummary.events30m > 0)
+    );
+
+    // Never silently turn empty/unprocessed GA4 runReport responses into 0 when Realtime
+    // confirms live visitor activity is already arriving in this property.
+    if (!hasStandardRows && realtimeHasActivity && realtimeSummary) {
+      const status = getAnalyticsConnectionStatus({
+        customDimensionsRegistered,
+        errorCode: 'none',
+        errorMessage: null
+      });
+
+      const processingReport: AnalyticsReportData = {
+        available: true,
+        dataState: 'processing_delay',
+        dataStateMessage: `GA4 Realtime is actively receiving visits (${realtimeSummary.activeUsers30m.toLocaleString()} active users, ${realtimeSummary.pageViews30m.toLocaleString()} page views, ${realtimeSummary.events30m.toLocaleString()} events in the last 30 min), while Google Analytics standard historical & intraday tables for ${dateRangeApplied.resolvedStartDate} – ${dateRangeApplied.resolvedEndDate} (${propertyTimeZone}) have not finished processing yet. Standard GA4 reports typically update within 4–8 hours (up to 24–48 hours for a newly receiving property). Historical metrics are shown as Processing rather than 0 until Google completes aggregation.`,
+        propertyTimeZone,
+        dateRangeApplied,
+        hasIntradayLag: true,
+        realtimeSummary,
+        range,
+        fetchedAt: new Date().toISOString(),
+        cached: false,
+        status,
+        overview: {
+          totalUsers: null,
+          activeUsers: null,
+          sessions: null,
+          pageViews: null,
+          avgEngagementSeconds: null,
+          newUsers: null,
+          returningUsers: null
+        },
+        dailySeries: [],
+        weeklySeries: [],
+        topPages: [],
+        devices: [],
+        locations: [],
+        trafficSources: [],
+        sections: buildEmptySections(),
+        sectionMetricsAvailable: false,
+        weddingExperience: buildEmptyWeddingExperience('Awaiting GA4 standard report processing'),
+        interactionStatusAvailable: false
+      };
+
+      reportCache.set(range, {
+        value: processingReport,
+        expiresAtMs: Date.now() + REPORT_CACHE_TTL_MS
+      });
+      return processingReport;
+    }
+
+    // Parse overview without silently converting missing metric values into 0
     const ovRow = overviewRes.rows?.[0];
-    const totalUsers = numVal(ovRow, 0);
-    const activeUsers = numVal(ovRow, 1);
-    const sessions = numVal(ovRow, 2);
-    const pageViews = numVal(ovRow, 3);
-    const totalEngagementSec = numVal(ovRow, 4);
-    const newUsers = numVal(ovRow, 5);
-    const returningUsers = Math.max(0, totalUsers - newUsers);
+    const totalUsers = hasStandardRows ? optionalNumVal(ovRow, 0) : 0;
+    const activeUsers = hasStandardRows ? optionalNumVal(ovRow, 1) : 0;
+    const sessions = hasStandardRows ? optionalNumVal(ovRow, 2) : 0;
+    const pageViews = hasStandardRows ? optionalNumVal(ovRow, 3) : 0;
+    const totalEngagementSec = hasStandardRows ? optionalNumVal(ovRow, 4) : 0;
+    const newUsers = hasStandardRows ? optionalNumVal(ovRow, 5) : 0;
+    const returningUsers =
+      totalUsers !== null && newUsers !== null ? Math.max(0, totalUsers - newUsers) : null;
     const avgEngagementSeconds =
-      sessions > 0
+      totalEngagementSec === null
+        ? null
+        : sessions !== null && sessions > 0
         ? Math.round(totalEngagementSec / sessions)
-        : activeUsers > 0
+        : activeUsers !== null && activeUsers > 0
         ? Math.round(totalEngagementSec / activeUsers)
         : 0;
 
@@ -1375,8 +1563,29 @@ export async function fetchAnalyticsDashboardReport(
       errorMessage: null
     });
 
+    const hasIntradayLag = Boolean(
+      realtimeSummary &&
+        realtimeHasActivity &&
+        range === 'today' &&
+        (pageViews === null || realtimeSummary.pageViews30m > pageViews)
+    );
+
+    const dataState = hasStandardRows ? 'ready' : 'no_data';
+    const dataStateMessage =
+      dataState === 'no_data'
+        ? `GA4 Data API returned 0 processed rows for ${dateRangeApplied.resolvedStartDate} – ${dateRangeApplied.resolvedEndDate} (${propertyTimeZone}). Note: newly received visits can take 4–8 hours (up to 24–48 hours on a new property) to appear in standard reports.`
+        : hasIntradayLag
+        ? `Standard GA4 intraday tables for today (${propertyTimeZone}) are still catching up with Realtime. Latest 30-minute visits appear in Live Overview above.`
+        : null;
+
     const report: AnalyticsReportData = {
       available: true,
+      dataState,
+      dataStateMessage,
+      propertyTimeZone,
+      dateRangeApplied,
+      hasIntradayLag,
+      realtimeSummary,
       range,
       fetchedAt: new Date().toISOString(),
       cached: false,

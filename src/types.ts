@@ -589,6 +589,8 @@ export interface AnalyticsRealtimeData {
   fetchedAt: string;
   activeUsersNow: number | null;
   activeUsersLast30Min: number | null;
+  pageViewsLast30Min?: number | null;
+  eventsLast30Min?: number | null;
   recentEvents: AnalyticsRealtimeEventItem[];
   activePages: AnalyticsRealtimePageItem[];
   locations: AnalyticsRealtimeLocationItem[];
@@ -679,8 +681,25 @@ export interface AnalyticsWeddingExperienceMetric {
   detailNote?: string;
 }
 
+export type AnalyticsReportDataState = 'ready' | 'processing_delay' | 'no_data' | 'unavailable';
+
 export interface AnalyticsReportData {
   available: boolean;
+  dataState: AnalyticsReportDataState;
+  dataStateMessage: string | null;
+  propertyTimeZone: string | null;
+  dateRangeApplied: {
+    startDate: string;
+    endDate: string;
+    resolvedStartDate: string;
+    resolvedEndDate: string;
+  } | null;
+  hasIntradayLag: boolean;
+  realtimeSummary: {
+    activeUsers30m: number;
+    pageViews30m: number;
+    events30m: number;
+  } | null;
   range: AnalyticsDateRange;
   fetchedAt: string;
   cached: boolean;

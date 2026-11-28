@@ -267,6 +267,7 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
 
   const isGa4Connected = Boolean(report?.available);
   const isRealtimeConnected = Boolean(realtime?.available);
+  const isProcessingDelay = Boolean(isGa4Connected && report?.dataState === 'processing_delay');
   const status = report?.status;
 
   const newReturningSplit = useMemo(() => {
@@ -320,6 +321,17 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
                   <span aria-hidden="true">·</span>
                   <span className="font-mono text-xs text-[#07543E]">
                     {status.measurementIdMasked}
+                  </span>
+                </>
+              )}
+              {report?.propertyTimeZone && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-xs text-[#737746]">
+                    Timezone: {report.propertyTimeZone}
+                    {report.dateRangeApplied
+                      ? ` (${report.dateRangeApplied.resolvedStartDate} → ${report.dateRangeApplied.resolvedEndDate})`
+                      : ''}
                   </span>
                 </>
               )}
@@ -835,6 +847,32 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
         )}
       </section>
 
+      {/* GA4 Standard / Intraday Processing Notice (shown when Realtime is active while runReport tables are still processing) */}
+      {isProcessingDelay && report?.dataStateMessage && (
+        <div
+          role="status"
+          className="p-4 sm:p-5 rounded-xl bg-[#FAF7F0] border border-[#C5A04A]/50 text-xs sm:text-sm text-[#262820] flex items-start gap-3 leading-relaxed"
+        >
+          <Clock className="w-4 h-4 text-[#C5A04A] shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="space-y-1">
+            <p className="font-semibold text-[#07543E]">
+              GA4 Standard Reports Are Still Processing (Live Realtime Activity Confirmed)
+            </p>
+            <p className="text-[#262820]/85">{report.dataStateMessage}</p>
+          </div>
+        </div>
+      )}
+
+      {!isProcessingDelay && report?.hasIntradayLag && report?.dataStateMessage && (
+        <div
+          role="status"
+          className="p-3.5 rounded-xl bg-[#FAF7F0] border border-[#07543E]/15 text-xs text-[#262820]/80 flex items-center gap-2"
+        >
+          <Info className="w-4 h-4 text-[#737746] shrink-0" aria-hidden="true" />
+          <span>{report.dataStateMessage}</span>
+        </div>
+      )}
+
       {/* ====================================================================
           SECTION A: LIVE OVERVIEW KPI CARDS
       ==================================================================== */}
@@ -891,7 +929,12 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             )}
             <p className="text-xs text-[#262820]/70">
               {isRealtimeConnected
-                ? 'Rolling 30-minute active visitor window'
+                ? realtime?.pageViewsLast30Min !== undefined &&
+                  realtime?.pageViewsLast30Min !== null &&
+                  realtime?.eventsLast30Min !== undefined &&
+                  realtime?.eventsLast30Min !== null
+                  ? `Rolling 30-min window · ${realtime.pageViewsLast30Min.toLocaleString()} page views · ${realtime.eventsLast30Min.toLocaleString()} events`
+                  : 'Rolling 30-minute active visitor window'
                 : 'Unavailable until GA4 Realtime API is connected'}
             </p>
           </div>
@@ -906,15 +949,21 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             </div>
             {loadingReport ? (
               <div className="h-10 w-28 rounded-md bg-[#07543E]/8 animate-pulse" />
+            ) : isProcessingDelay ? (
+              <p className="font-serif text-2xl sm:text-3xl font-semibold text-[#737746]">
+                Processing…
+              </p>
             ) : (
               <p className="font-serif text-4xl font-semibold text-[#07543E] tabular-nums">
                 {formatNumber(report?.overview.totalUsers ?? null)}
               </p>
             )}
             <p className="text-xs text-[#262820]/70 tabular-nums">
-              {isGa4Connected
-                ? `${formatNumber(report?.overview.sessions ?? 0)} sessions · ${formatNumber(
-                    report?.overview.activeUsers ?? 0
+              {isProcessingDelay
+                ? 'Awaiting GA4 intraday processing (live visits active in Realtime)'
+                : isGa4Connected
+                ? `${formatNumber(report?.overview.sessions ?? null)} sessions · ${formatNumber(
+                    report?.overview.activeUsers ?? null
                   )} active users`
                 : 'Unavailable — connect GA4 Property ID'}
             </p>
@@ -930,13 +979,21 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             </div>
             {loadingReport ? (
               <div className="h-10 w-24 rounded-md bg-[#07543E]/8 animate-pulse" />
+            ) : isProcessingDelay ? (
+              <p className="font-serif text-2xl sm:text-3xl font-semibold text-[#737746]">
+                Processing…
+              </p>
             ) : (
               <p className="font-serif text-4xl font-semibold text-[#07543E] tabular-nums">
                 {formatNumber(report?.overview.pageViews ?? null)}
               </p>
             )}
             <p className="text-xs text-[#262820]/70">
-              {isGa4Connected
+              {isProcessingDelay
+                ? report?.realtimeSummary?.pageViews30m
+                  ? `Awaiting GA4 standard tables (${report.realtimeSummary.pageViews30m.toLocaleString()} live in Realtime)`
+                  : 'Awaiting GA4 intraday processing'
+                : isGa4Connected
                 ? 'Deduplicated SPA & page transitions'
                 : 'Unavailable — connect GA4 Property ID'}
             </p>
@@ -952,13 +1009,19 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             </div>
             {loadingReport ? (
               <div className="h-10 w-24 rounded-md bg-[#07543E]/8 animate-pulse" />
+            ) : isProcessingDelay ? (
+              <p className="font-serif text-2xl sm:text-3xl font-semibold text-[#737746]">
+                Processing…
+              </p>
             ) : (
               <p className="font-serif text-4xl font-semibold text-[#07543E] tabular-nums">
                 {formatDuration(report?.overview.avgEngagementSeconds ?? null)}
               </p>
             )}
             <p className="text-xs text-[#262820]/70">
-              {isGa4Connected
+              {isProcessingDelay
+                ? 'Populates once GA4 finishes intraday aggregation'
+                : isGa4Connected
                 ? 'Average active foreground time per session'
                 : 'Unavailable — connect GA4 Property ID'}
             </p>
@@ -974,6 +1037,10 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             </div>
             {loadingReport ? (
               <div className="h-10 w-36 rounded-md bg-[#07543E]/8 animate-pulse" />
+            ) : isProcessingDelay ? (
+              <p className="font-serif text-2xl sm:text-3xl font-semibold text-[#737746]">
+                Processing…
+              </p>
             ) : (
               <div className="space-y-2">
                 <p className="font-serif text-2xl sm:text-3xl font-semibold text-[#07543E] tabular-nums">
@@ -1002,7 +1069,9 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
               </div>
             )}
             <p className="text-xs text-[#262820]/70 tabular-nums">
-              {newReturningSplit.available
+              {isProcessingDelay
+                ? 'Awaiting GA4 intraday processing'
+                : newReturningSplit.available
                 ? `${newReturningSplit.newPct}% new · ${newReturningSplit.retPct}% returning`
                 : 'Unavailable — connect GA4 Property ID'}
             </p>
@@ -1068,13 +1137,23 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
               Connect your GA4 Property ID and read-only service account to render live daily and weekly visitor and page-view trends.
             </p>
           </div>
+        ) : isProcessingDelay ? (
+          <div className="h-60 rounded-lg border border-dashed border-[#C5A04A]/50 bg-[#FAF7F0]/70 flex flex-col items-center justify-center text-center px-6 gap-2">
+            <Clock className="w-6 h-6 text-[#C5A04A]" aria-hidden="true" />
+            <p className="text-sm font-semibold text-[#07543E]">
+              Awaiting GA4 Standard Report Processing
+            </p>
+            <p className="text-xs text-[#262820]/75 max-w-lg leading-relaxed">
+              Live visits are already being received in GA4 Realtime, but Google Analytics has not finished aggregating today&apos;s intraday time-series data yet ({report?.propertyTimeZone || 'Africa/Lagos'}). Daily and weekly trends will appear automatically once GA4 completes processing.
+            </p>
+          </div>
         ) : activeTimeSeries.length === 0 ? (
           <div className="h-60 rounded-lg border border-dashed border-[#07543E]/20 bg-[#FAF7F0]/60 flex flex-col items-center justify-center text-center px-6 gap-2">
             <p className="text-sm font-semibold text-[#07543E]">
               No Recorded Visits in This Date Range (0)
             </p>
             <p className="text-xs text-[#262820]/70 max-w-md">
-              Google Analytics is connected, and 0 visits were recorded during this window. Try expanding to Last 30 Days or All Time.
+              Google Analytics is connected, and 0 processed visits were found for this window ({report?.propertyTimeZone || 'Africa/Lagos'}). Try expanding to Last 30 Days or All Time, or check again after GA4 intraday processing completes.
             </p>
           </div>
         ) : (
@@ -1488,9 +1567,13 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             <p className="text-xs sm:text-sm text-[#262820]/70 py-6 text-center">
               Page analytics are unavailable until GA4 Data API credentials are configured.
             </p>
+          ) : isProcessingDelay ? (
+            <p className="text-xs sm:text-sm text-[#262820]/75 py-6 text-center">
+              Awaiting GA4 standard report processing — live active views appear above.
+            </p>
           ) : report && report.topPages.length === 0 ? (
             <p className="text-xs sm:text-sm text-[#262820]/70 py-6 text-center">
-              No page views recorded in this date range (0).
+              No processed page views in this date range (0).
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -1549,9 +1632,13 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             <p className="text-xs text-[#262820]/70 py-8 text-center">
               Device breakdown unavailable.
             </p>
+          ) : isProcessingDelay ? (
+            <p className="text-xs text-[#262820]/75 py-8 text-center">
+              Awaiting GA4 standard report processing (live sessions are active in Realtime).
+            </p>
           ) : report && report.devices.length === 0 ? (
             <p className="text-xs text-[#262820]/70 py-8 text-center">
-              No device sessions recorded in this period (0).
+              No processed device sessions in this period (0).
             </p>
           ) : (
             <>
@@ -1639,9 +1726,13 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             <p className="text-xs text-[#262820]/70 py-8 text-center">
               Geographic data unavailable.
             </p>
+          ) : isProcessingDelay ? (
+            <p className="text-xs text-[#262820]/75 py-8 text-center">
+              Awaiting GA4 standard report processing (live visitors are active in Realtime).
+            </p>
           ) : report && report.locations.length === 0 ? (
             <p className="text-xs text-[#262820]/70 py-8 text-center">
-              No visitor locations recorded in this period (0).
+              No processed visitor locations in this period (0).
             </p>
           ) : (
             <div className="divide-y divide-[#07543E]/10 text-xs sm:text-sm max-h-72 overflow-y-auto pr-1">
@@ -1688,9 +1779,13 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             <p className="text-xs text-[#262820]/70 py-8 text-center">
               Traffic source breakdown unavailable.
             </p>
+          ) : isProcessingDelay ? (
+            <p className="text-xs text-[#262820]/75 py-8 text-center">
+              Awaiting GA4 standard report processing (live sessions are active in Realtime).
+            </p>
           ) : report && report.trafficSources.length === 0 ? (
             <p className="text-xs text-[#262820]/70 py-8 text-center">
-              No traffic sources recorded in this period (0).
+              No processed traffic sources in this period (0).
             </p>
           ) : (
             <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
