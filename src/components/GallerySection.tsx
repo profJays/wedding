@@ -38,6 +38,10 @@ import {
   formatFileSize,
   validateUploadEntries
 } from '../utils/uploadValidation';
+import {
+  trackGuestUploadCompleted,
+  trackGuestUploadInitiated
+} from '../services/analytics';
 
 interface GallerySectionProps {
   galleryPublicEnabled: boolean;
@@ -237,8 +241,15 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
     const reportForBatch = validateUploadEntries(entriesToSend, activeLimits);
     if (reportForBatch.hasErrors) {
       setUploadError('Please fix or remove the highlighted invalid files before uploading.');
+      trackGuestUploadCompleted(0, entriesToSend.length);
       return;
     }
+
+    const hasImages = entriesToSend.some((entry) => entry.mediaType === 'image');
+    const hasVideos = entriesToSend.some((entry) => entry.mediaType === 'video');
+    const mediaKind: 'image' | 'video' | 'mixed' =
+      hasImages && hasVideos ? 'mixed' : hasVideos ? 'video' : 'image';
+    trackGuestUploadInitiated(entriesToSend.length, mediaKind);
 
     const sendIds = new Set(entriesToSend.map((entry) => entry.id));
     setUploadError(null);
@@ -263,6 +274,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
         onProgress: setUploadProgress
       });
 
+      trackGuestUploadCompleted(outcome.summary.succeeded, outcome.summary.failed);
       const resultById = new Map(outcome.results.map((r) => [r.clientFileId, r]));
 
       if (outcome.summary.failed === 0 && outcome.summary.succeeded > 0) {
@@ -316,6 +328,7 @@ export const GallerySection: React.FC<GallerySectionProps> = ({
         );
       }
     } catch (err) {
+      trackGuestUploadCompleted(0, entriesToSend.length);
       const msg = err instanceof Error ? err.message : 'Upload failed.';
       setSelectedEntries((prev) =>
         prev.map((entry) =>

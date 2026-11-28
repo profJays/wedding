@@ -38,6 +38,15 @@ import {
   SiteContentData,
   VisibilitySettingsData
 } from './types';
+import {
+  initializeAnalytics,
+  isAdminDebugModeEnabled,
+  setAnalyticsAdminExclusion,
+  trackChallengeCompleted,
+  trackChallengeStarted,
+  trackVirtualPageView
+} from './services/analytics';
+import { useStandaloneSectionEngagement } from './hooks/useSectionEngagement';
 
 export default function App() {
   const isInitialAdminHash =
@@ -68,6 +77,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthorizedAdmin, setIsAuthorizedAdmin] = useState<boolean>(false);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [analyticsReady, setAnalyticsReady] = useState<boolean>(false);
+  const [authReadyForAnalytics, setAuthReadyForAnalytics] = useState<boolean>(false);
 
   useEffect(() => {
     const unsubSite = subscribeSiteContent((data) => {
@@ -125,6 +136,51 @@ export default function App() {
       }
     }
   }, [visibilityReady, view, visibilitySettings, hasEnteredWebsite]);
+
+  // Initialize Google Analytics 4 once (coordinated with index.html official Google tag)
+  useEffect(() => {
+    let active = true;
+    void initializeAnalytics().then((ok) => {
+      if (active && ok) setAnalyticsReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Wait briefly for Firebase Auth resolution so signed-in admins never leak an initial page_view,
+  // while ensuring normal visitors are never blocked by slow/offline auth connections.
+  useEffect(() => {
+    if (!authLoading) {
+      setAuthReadyForAnalytics(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setAuthReadyForAnalytics(true);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [authLoading]);
+
+  // Exclude administrator & dashboard sessions from public visitor statistics
+  useEffect(() => {
+    setAnalyticsAdminExclusion(isAuthorizedAdmin || view === 'admin');
+  }, [isAuthorizedAdmin, view]);
+
+  // Deduplicated SPA virtual page_view tracking for public views
+  useEffect(() => {
+    if (!analyticsReady || !visibilityReady || !authReadyForAnalytics) return;
+    if (view === 'admin') return;
+    trackVirtualPageView(view);
+  }, [analyticsReady, visibilityReady, authReadyForAnalytics, view, isAuthorizedAdmin]);
+
+  // Active foreground engagement tracking for standalone Wedding Challenge views
+  const isChallengeExperienceActive =
+    analyticsReady &&
+    visibilityReady &&
+    authReadyForAnalytics &&
+    (!isAuthorizedAdmin || isAdminDebugModeEnabled()) &&
+    (view === 'welcome' || view === 'quiz' || view === 'uninvited' || view === 'approved');
+  useStandaloneSectionEngagement('wedding_challenge', isChallengeExperienceActive);
 
   // Combined effective feature toggles (preserving legacy siteContent toggles seamlessly)
   const effectiveMusicEnabled =
@@ -332,6 +388,7 @@ export default function App() {
       handleExploreWebsite();
       return;
     }
+    trackChallengeStarted();
     setCurrentQuestionIndex(0);
     setView('quiz');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -344,6 +401,7 @@ export default function App() {
         [currentQuestion.id]: option.id
       }));
       setIsChallengePassed(false);
+      trackChallengeCompleted(false);
       setView('uninvited');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -361,6 +419,7 @@ export default function App() {
     } else {
       setIsChallengePassed(true);
       setHasEnteredWebsite(true);
+      trackChallengeCompleted(true);
       setView('approved');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CheckCircle2, AlertCircle, Send, Loader2 } from 'lucide-react';
 import { submitGuestRsvp } from '../services/weddingRepository';
 import { SectionTypographyElements } from '../types';
 import { getSectionTypographyProps } from '../utils/typography';
+import { trackRsvpFormOpened, trackRsvpSubmitted } from '../services/analytics';
 
 interface RsvpSectionProps {
   coupleNames: string;
@@ -33,18 +34,29 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
     attending: boolean;
     guestCount: number;
   } | null>(null);
+  const formOpenedTrackedRef = useRef(false);
+
+  const handleFormInteraction = () => {
+    if (!formOpenedTrackedRef.current) {
+      formOpenedTrackedRef.current = true;
+      trackRsvpFormOpened();
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    handleFormInteraction();
 
     const trimmedName = fullName.trim();
     if (trimmedName.length < 2) {
       setError('Please enter your full name.');
+      trackRsvpSubmitted(false);
       return;
     }
     if (!attending) {
       setError('Please select whether you will be attending or unable to attend.');
+      trackRsvpSubmitted(false);
       return;
     }
 
@@ -63,12 +75,14 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
         maxGuestsAllowed: maxGuestsPerRsvp
       });
 
+      trackRsvpSubmitted(true);
       setSubmittedRecord({
         fullName: trimmedName,
         attending: isAttending,
         guestCount: finalCount
       });
     } catch (err) {
+      trackRsvpSubmitted(false);
       const msg = err instanceof Error ? err.message : '';
       if (msg === 'DUPLICATE_OR_CLOSED_RSVP') {
         setError(
@@ -154,6 +168,7 @@ export const RsvpSection: React.FC<RsvpSectionProps> = ({
         ) : (
           <form
             onSubmit={handleSubmit}
+            onFocus={handleFormInteraction}
             noValidate
             className="p-5 min-[360px]:p-6 sm:p-10 rounded-xl bg-[#FFFDF8] border border-[#07543E]/15 space-y-6"
           >

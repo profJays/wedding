@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, Copy, Gift } from 'lucide-react';
 import { SectionTypographyElements } from '../types';
 import { getSectionTypographyProps } from '../utils/typography';
+import { trackGiftingAccountCopied } from '../services/analytics';
 
 interface GiftingSectionProps {
   heading: string;
@@ -61,6 +62,12 @@ export const GiftingSection: React.FC<GiftingSectionProps> = ({
 
   const handleCopy = async (field: CopyFieldKey, value: string) => {
     const ok = await copyTextWithFallback(value);
+    const fieldLabelMap: Record<CopyFieldKey, 'account_name' | 'bank_name' | 'account_number'> = {
+      accountName: 'account_name',
+      bankName: 'bank_name',
+      accountNumber: 'account_number'
+    };
+    trackGiftingAccountCopied(fieldLabelMap[field], ok);
     if (ok) {
       setCopiedField(field);
       window.setTimeout(() => {

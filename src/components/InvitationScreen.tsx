@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import { Crest } from './Crest';
+import { trackInvitationEntryClick, trackInvitationOpened } from '../services/analytics';
 
 interface InvitationScreenProps {
   onContinue: () => void;
@@ -137,6 +138,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
 
   const handleOpenEnvelope = () => {
     if (phase !== 'sealed') return;
+    trackInvitationOpened();
     if (typeof window !== 'undefined' && 'vibrate' in navigator) {
       try {
         navigator.vibrate?.(35);
@@ -152,10 +154,16 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
   };
 
   const handleContinueClick = () => {
+    trackInvitationEntryClick(challengeEnabled ? 'challenge' : 'website');
     setIsLeaving(true);
     setTimeout(() => {
       onContinue();
     }, prefersReducedMotion ? 120 : 320);
+  };
+
+  const handleReturnWebsiteClick = () => {
+    trackInvitationEntryClick('website');
+    onExploreWebsite();
   };
 
   const isFlapsOpen = phase === 'opened';
@@ -295,7 +303,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
               {canReturnToWebsite && (
                 <button
                   type="button"
-                  onClick={onExploreWebsite}
+                  onClick={handleReturnWebsiteClick}
                   disabled={!isFlapsOpen}
                   className="mt-2 min-h-[44px] px-3 inline-flex items-center text-xs sm:text-sm font-medium text-[#0F5132]/85 hover:text-[#0F5132] underline underline-offset-4 cursor-pointer transition-colors"
                 >
@@ -489,7 +497,7 @@ export const InvitationScreen: React.FC<InvitationScreenProps> = ({
                   <div>
                     <button
                       type="button"
-                      onClick={onExploreWebsite}
+                      onClick={handleReturnWebsiteClick}
                       className="min-h-[44px] px-3 inline-flex items-center text-xs sm:text-sm text-[#F3E5AB]/85 hover:text-[#FCF6BA] underline underline-offset-4 cursor-pointer"
                     >
                       Return to Wedding Website

@@ -34,7 +34,8 @@ import {
   Gift,
   Type,
   Copy,
-  SlidersHorizontal
+  SlidersHorizontal,
+  BarChart3
 } from 'lucide-react';
 import { WeddingPuzzleBoard } from './WeddingPhotoPuzzleSection';
 import { AdminMusicLibraryPanel } from './admin/AdminMusicLibraryPanel';
@@ -43,6 +44,7 @@ import { AdminTypographyPanel } from './admin/AdminTypographyPanel';
 import { AdminSlideshowPanel } from './admin/AdminSlideshowPanel';
 import { AdminWebsiteImagesPanel } from './admin/AdminWebsiteImagesPanel';
 import { AdminVisibilityControlsPanel } from './admin/AdminVisibilityControlsPanel';
+import { AdminAnalyticsPanel } from './admin/AdminAnalyticsPanel';
 import { User } from 'firebase/auth';
 import {
   signInAdminWithGoogle,
@@ -125,6 +127,7 @@ interface AdminDashboardProps {
 
 type AdminTab =
   | 'overview'
+  | 'analytics'
   | 'visibility'
   | 'content'
   | 'images'
@@ -1213,6 +1216,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       >
         {[
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+          { id: 'analytics', label: 'Analytics', icon: BarChart3 },
           { id: 'visibility', label: 'Visibility Controls', icon: SlidersHorizontal },
           { id: 'content', label: 'Website Content', icon: FileEdit },
           { id: 'images', label: 'Website Images', icon: ImageIcon },
@@ -2255,6 +2259,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
           </div>
         </form>
+      )}
+
+      {/* ====================================================================
+          TAB 1A: WEBSITE ANALYTICS DASHBOARD (GA4)
+      ==================================================================== */}
+      {activeTab === 'analytics' && (
+        <AdminAnalyticsPanel siteUrl="https://mary-joseph.com" />
       )}
 
       {/* ====================================================================

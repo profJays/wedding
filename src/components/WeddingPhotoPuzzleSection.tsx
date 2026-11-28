@@ -30,6 +30,13 @@ import {
   isPuzzleSolved,
   swapTiles
 } from '../utils/puzzleLogic';
+import {
+  trackPuzzleCompleted,
+  trackPuzzleMove,
+  trackPuzzleRewardSongSelected,
+  trackPuzzleStarted,
+  trackSongSuggestionSubmitted
+} from '../services/analytics';
 
 export const PUZZLE_REWARD_SESSION_KEY = 'mjay2026_puzzle_reward_unlocked';
 const SUBMITTED_SUGGESTIONS_SESSION_KEY = 'mjay2026_song_suggestions_submitted';
@@ -242,11 +249,14 @@ export const WeddingPuzzleBoard: React.FC<WeddingPuzzleBoardProps> = ({
     if (solved && !celebrationFiredRef.current) {
       celebrationFiredRef.current = true;
       triggerCelebration();
+      if (!isPreviewModal) {
+        trackPuzzleCompleted(moves);
+      }
       onSolved?.();
     } else if (!solved) {
       celebrationFiredRef.current = false;
     }
-  }, [solved, triggerCelebration, onSolved]);
+  }, [solved, triggerCelebration, onSolved, isPreviewModal, moves]);
 
   const performSwap = useCallback(
     (slotA: number, slotB: number) => {
@@ -258,12 +268,21 @@ export const WeddingPuzzleBoard: React.FC<WeddingPuzzleBoardProps> = ({
         }
         return next;
       });
-      setMoves((m) => m + 1);
+      setMoves((m) => {
+        const nextMoves = m + 1;
+        if (!isPreviewModal) {
+          if (m === 0) {
+            trackPuzzleStarted();
+          }
+          trackPuzzleMove(nextMoves);
+        }
+        return nextMoves;
+      });
       setSelectedSlot(null);
       setDraggedSlot(null);
       setDragOverSlot(null);
     },
-    [solved]
+    [solved, isPreviewModal]
   );
 
   const handleTileActivate = (slotIndex: number) => {
@@ -652,6 +671,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
     if (!track || !onSelectSong) return;
 
     const outcome = await onSelectSong(track);
+    trackPuzzleRewardSongSelected(track.id, outcome.startedPlaying || outcome.respectPaused);
     if (outcome.respectPaused) {
       setSelectedNotice(
         `Queued "${track.title}" by ${track.artist}. Music is currently paused — tap Play in the top bar whenever you're ready.`
@@ -675,12 +695,14 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
     const cleanArtist = suggestArtist.trim();
     if (!cleanTitle) {
       setSuggestError('Please enter a song title before submitting.');
+      trackSongSuggestionSubmitted(false);
       return;
     }
 
     const now = Date.now();
     if (now - lastSuggestionAt < 4000) {
       setSuggestError('Please wait a moment before sending another suggestion.');
+      trackSongSuggestionSubmitted(false);
       return;
     }
 
@@ -690,6 +712,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
       setSuggestSuccess("Thank you! We've added your song suggestion to our list.");
       setSuggestTitle('');
       setSuggestArtist('');
+      trackSongSuggestionSubmitted(true);
       return;
     }
 
@@ -699,6 +722,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
         title: cleanTitle,
         artist: cleanArtist
       });
+      trackSongSuggestionSubmitted(true);
       setLastSuggestionAt(Date.now());
       try {
         const nextList = [...prevSubmitted.slice(-24), normalizedKey];
@@ -713,6 +737,7 @@ export const WeddingPhotoPuzzleSection: React.FC<WeddingPhotoPuzzleSectionProps>
       setSuggestArtist('');
       setSuggestSuccess("Thank you! We've added your song suggestion to our list.");
     } catch (err) {
+      trackSongSuggestionSubmitted(false);
       setSuggestError(
         err instanceof Error
           ? err.message

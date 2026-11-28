@@ -38,6 +38,7 @@ import {
   buildGoogleCalendarUrl,
   downloadIcsFile
 } from '../utils/calendar';
+import { useWebsiteSectionEngagement } from '../hooks/useSectionEngagement';
 
 interface WeddingWebsiteProps {
   siteContent: SiteContentData;
@@ -153,6 +154,9 @@ export const WeddingWebsite: React.FC<WeddingWebsiteProps> = ({
       sections.gallery ||
       showBottomExperienceBand
   );
+
+  const visibilitySignature = `${sections.welcome}-${sections.ourStory}-${sections.schedule}-${showPuzzleSection}-${showGiftingSection}-${sections.qa}-${sections.rsvp}-${sections.gallery}`;
+  useWebsiteSectionEngagement(hasAnyVisibleSection, visibilitySignature);
 
   const welcomeTypoProps = getSectionTypographyProps('welcome', siteContent.sectionTypography?.welcome);
   const storyTypoProps = getSectionTypographyProps('story', siteContent.sectionTypography?.story);

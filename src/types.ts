@@ -480,3 +480,221 @@ export interface ResumableCompleteResponse {
   item: UploadedFileMetadata;
   isAdminUpload: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Google Analytics 4 (GA4) Reporting & Tracking Types
+// ---------------------------------------------------------------------------
+export type AnalyticsDateRange = 'today' | '7d' | '30d' | 'all';
+
+export type AnalyticsSectionKey =
+  | 'welcome'
+  | 'our_story'
+  | 'schedule'
+  | 'wedding_challenge'
+  | 'wedding_photo_puzzle'
+  | 'gifting'
+  | 'qa'
+  | 'rsvp'
+  | 'gallery';
+
+export interface PublicAnalyticsConfig {
+  enabled: boolean;
+  measurementId: string | null;
+  siteUrl: string;
+}
+
+export interface FrontendAnalyticsDiagnostics {
+  gtagScriptLoaded: boolean;
+  gtagScriptStatus: 'loaded' | 'loading' | 'blocked_or_failed';
+  measurementId: string | null;
+  initialized: boolean;
+  pageViewDispatched: boolean;
+  pageViewStatus: 'dispatched' | 'suppressed_admin' | 'not_yet_dispatched';
+  lastPageViewPath: string | null;
+  lastPageViewAt: string | null;
+  browserHostname: string;
+  sectionTrackingActive: boolean;
+  observedSectionCount: number;
+  collectBeaconObserved: boolean;
+  collectBeaconCount: number;
+  adminExcluded: boolean;
+  debugModeEnabled: boolean;
+  dispatchedEventCount: number;
+  lastDispatchedEvent: {
+    name: string;
+    at: string;
+    debugMode: boolean;
+  } | null;
+  errors: string[];
+}
+
+export interface AdminDiagnosticTestResult {
+  dispatched: boolean;
+  collectBeaconObserved: boolean;
+  eventName: string;
+  timestamp: string;
+  error: string | null;
+}
+
+export type AnalyticsErrorCode =
+  | 'none'
+  | 'not_configured'
+  | 'invalid_credentials'
+  | 'api_not_enabled'
+  | 'permission_denied'
+  | 'quota_exceeded'
+  | 'api_error';
+
+export interface AnalyticsConnectionStatus {
+  trackingConfigured: boolean;
+  reportingConfigured: boolean;
+  measurementIdMasked: string | null;
+  propertyIdMasked: string | null;
+  serviceAccountEmailMasked: string | null;
+  serviceAccountProjectId: string | null;
+  credentialSource: 'service_account_json' | 'email_and_private_key' | 'none';
+  missingEnvVars: string[];
+  customDimensionsRegistered: boolean | null;
+  lastCheckedAt: string;
+  errorCode: AnalyticsErrorCode;
+  errorMessage: string | null;
+  activationUrl: string | null;
+}
+
+export interface AnalyticsRealtimeEventItem {
+  eventName: string;
+  label: string;
+  eventCount: number;
+  minutesAgo: number;
+}
+
+export interface AnalyticsRealtimePageItem {
+  screenName: string;
+  activeUsers: number;
+}
+
+export interface AnalyticsRealtimeLocationItem {
+  country: string;
+  city: string;
+  activeUsers: number;
+}
+
+export interface AnalyticsRealtimeDeviceItem {
+  deviceCategory: string;
+  activeUsers: number;
+}
+
+export interface AnalyticsRealtimeData {
+  available: boolean;
+  fetchedAt: string;
+  activeUsersNow: number | null;
+  activeUsersLast30Min: number | null;
+  recentEvents: AnalyticsRealtimeEventItem[];
+  activePages: AnalyticsRealtimePageItem[];
+  locations: AnalyticsRealtimeLocationItem[];
+  devices: AnalyticsRealtimeDeviceItem[];
+  errorCode: AnalyticsErrorCode;
+  errorMessage: string | null;
+  activationUrl?: string | null;
+}
+
+export interface AnalyticsOverviewMetrics {
+  totalUsers: number | null;
+  activeUsers: number | null;
+  sessions: number | null;
+  pageViews: number | null;
+  avgEngagementSeconds: number | null;
+  newUsers: number | null;
+  returningUsers: number | null;
+}
+
+export interface AnalyticsTimeSeriesPoint {
+  date: string; // YYYY-MM-DD
+  label: string;
+  users: number;
+  sessions: number;
+  pageViews: number;
+}
+
+export interface AnalyticsWeeklySeriesPoint {
+  weekStart: string; // YYYY-MM-DD
+  label: string;
+  users: number;
+  sessions: number;
+  pageViews: number;
+}
+
+export interface AnalyticsPageMetric {
+  pagePath: string;
+  pageTitle: string;
+  pageViews: number;
+  users: number;
+  avgEngagementSeconds: number;
+}
+
+export interface AnalyticsDeviceMetric {
+  deviceCategory: string;
+  users: number;
+  sessions: number;
+}
+
+export interface AnalyticsLocationMetric {
+  country: string;
+  city: string;
+  users: number;
+  sessions: number;
+}
+
+export interface AnalyticsTrafficSourceMetric {
+  source: string;
+  medium: string;
+  channelGroup: string;
+  sessions: number;
+  users: number;
+}
+
+export interface AnalyticsSectionMetric {
+  sectionKey: AnalyticsSectionKey;
+  label: string;
+  views: number | null;
+  totalEngagementSeconds: number | null;
+  avgEngagementSeconds: number | null;
+}
+
+export interface AnalyticsWeddingExperienceMetric {
+  key: string;
+  category:
+    | 'Digital Invitation'
+    | 'Wedding Challenge'
+    | 'Wedding Photo Puzzle'
+    | 'Music & Songs'
+    | 'Gifting'
+    | 'RSVP'
+    | 'Gallery & Uploads';
+  label: string;
+  clicksOrStarted: number | null;
+  completed: number | null;
+  failed: number | null;
+  totalEvents: number | null;
+  detailNote?: string;
+}
+
+export interface AnalyticsReportData {
+  available: boolean;
+  range: AnalyticsDateRange;
+  fetchedAt: string;
+  cached: boolean;
+  status: AnalyticsConnectionStatus;
+  overview: AnalyticsOverviewMetrics;
+  dailySeries: AnalyticsTimeSeriesPoint[];
+  weeklySeries: AnalyticsWeeklySeriesPoint[];
+  topPages: AnalyticsPageMetric[];
+  devices: AnalyticsDeviceMetric[];
+  locations: AnalyticsLocationMetric[];
+  trafficSources: AnalyticsTrafficSourceMetric[];
+  sections: AnalyticsSectionMetric[];
+  sectionMetricsAvailable: boolean;
+  weddingExperience: AnalyticsWeddingExperienceMetric[];
+  interactionStatusAvailable: boolean;
+}
+

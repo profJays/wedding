@@ -13,6 +13,47 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Pinyon+Script&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- Google tag (gtag.js) -->
+    <script async id="mjay2026-ga4-gtag-js" src="https://www.googletagmanager.com/gtag/js?id=G-0TPFK9B9Y5"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      window.gtag = gtag;
+      window.__MJAY_GA4_TAG__ = {
+        measurementId: 'G-0TPFK9B9Y5',
+        configuredIds: ['G-0TPFK9B9Y5'],
+        scriptLoaded: false,
+        scriptError: null,
+        initialized: false
+      };
+      (function () {
+        var isAdminEntry = window.location.hash && window.location.hash.toLowerCase().indexOf('#admin') === 0;
+        var hasDebugSession = false;
+        try {
+          hasDebugSession = window.sessionStorage && window.sessionStorage.getItem('mjay2026_ga4_admin_debug_mode') === '1';
+        } catch (e) {}
+        if (isAdminEntry && !hasDebugSession) {
+          window['ga-disable-G-0TPFK9B9Y5'] = true;
+        }
+        var scriptEl = document.getElementById('mjay2026-ga4-gtag-js');
+        if (scriptEl) {
+          scriptEl.addEventListener('load', function () {
+            window.__MJAY_GA4_TAG__.scriptLoaded = true;
+          });
+          scriptEl.addEventListener('error', function () {
+            window.__MJAY_GA4_TAG__.scriptError = 'gtag.js failed to load (blocked by browser extension, ad blocker, or network error).';
+          });
+        }
+      })();
+      gtag('js', new Date());
+      gtag('config', 'G-0TPFK9B9Y5', {
+        send_page_view: false,
+        anonymize_ip: true,
+        allow_google_signals: false,
+        allow_ad_personalization_signals: false
+      });
+      window.__MJAY_GA4_TAG__.initialized = true;
+    </script>
   </head>
   <body class="bg-[#FAF7F0] text-[#262820] antialiased selection:bg-[#07543E]/15 selection:text-[#07543E]">
     <div id="root"></div>

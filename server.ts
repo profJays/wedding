@@ -33,6 +33,13 @@ import {
   verifyFirebaseIdToken,
   isAuthorizedWeddingAdmin
 } from './server/firebaseTokenVerifier.ts';
+import {
+  getPublicAnalyticsConfig,
+  getAnalyticsConnectionStatus,
+  fetchAnalyticsRealtimeReport,
+  fetchAnalyticsDashboardReport,
+  isValidAnalyticsDateRange
+} from './server/analyticsProvider.ts';
 import type {
   DriveMediaCategory,
   ResumableCompleteRequest,
@@ -468,6 +475,41 @@ async function startServer() {
     const admin = await requireAdminRequest(req, res, firebaseCfg);
     if (!admin) return;
     res.json({ authorized: true, uid: admin.uid, email: admin.email });
+  });
+
+  // Public Non-Sensitive GA4 Tracking Config (Measurement ID only — never exposes Property ID or secrets)
+  app.get('/api/analytics/config', (_req, res) => {
+    res.json(getPublicAnalyticsConfig());
+  });
+
+  // Admin-Only GA4 Connection & Setup Diagnostics
+  app.get('/api/analytics/status', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+    res.json(getAnalyticsConnectionStatus());
+  });
+
+  // Admin-Only GA4 Realtime Reporting API Proxy
+  app.get('/api/analytics/realtime', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+    const forceRefresh = req.query.refresh === '1';
+    const data = await fetchAnalyticsRealtimeReport(forceRefresh);
+    res.json(data);
+  });
+
+  // Admin-Only GA4 Data API Historical Report Proxy
+  app.get('/api/analytics/report', async (req, res) => {
+    const admin = await requireAdminRequest(req, res, firebaseCfg);
+    if (!admin) return;
+    const rawRange = typeof req.query.range === 'string' ? req.query.range : '7d';
+    if (!isValidAnalyticsDateRange(rawRange)) {
+      res.status(400).json({ error: 'Invalid analytics date range. Use today, 7d, 30d, or all.' });
+      return;
+    }
+    const forceRefresh = req.query.refresh === '1';
+    const report = await fetchAnalyticsDashboardReport(rawRange, forceRefresh);
+    res.json(report);
   });
 
   // Authoritative Server-Side Gallery Lock & Drive Storage Status
